@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: verify
+on:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: himesan-go1266
+    timeout-minutes: 25
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: off
+    steps:
+      - name: Require the repository owner
+        run: test "$GITHUB_ACTOR" = gamertan
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Go toolchain
+        run: test "$(go env GOVERSION)" = go1.26.6
+      - name: Verify
+        run: ./scripts/verify.sh
+      - name: Require an unchanged checkout
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"

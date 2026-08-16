@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: MPL-2.0
+
+/.cache/
+/dist/
+/.env.local
+*.test
+*.out
+*.db
+*.db-shm
+*.db-wal

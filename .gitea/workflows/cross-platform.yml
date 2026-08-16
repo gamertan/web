@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: cross-platform-release-gate
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: ${{ matrix.os }} / Go ${{ matrix.go }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Linux
+            runner: himesan-go1266
+            go: '1.26.6'
+          - os: Windows
+            runner: himesan-windows-go1266
+            go: '1.26.6'
+    steps:
+      - name: Require the repository owner on Linux
+        if: matrix.os != 'Windows'
+        run: test "$GITHUB_ACTOR" = gamertan
+      - name: Require the repository owner on Windows
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: if ($env:GITHUB_ACTOR -ne 'gamertan') { throw 'untrusted actor' }
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Assert the pinned runner toolchain
+        if: matrix.os != 'Windows'
+        run: test "$(go env GOVERSION)" = "go${{ matrix.go }}"
+      - name: Assert the pinned Windows toolchain
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: if ((& go env GOVERSION) -ne 'go${{ matrix.go }}') { throw 'unexpected Go toolchain' }
+      - name: Verify on Linux
+        if: matrix.os != 'Windows'
+        run: ./scripts/verify.sh
+      - name: Verify on Windows
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify.ps1
+      - name: Require an unchanged checkout on Linux
+        if: matrix.os != 'Windows'
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
+      - name: Require an unchanged checkout on Windows
+        if: matrix.os == 'Windows'
+        shell: pwsh
+        run: if (& git status --porcelain=v1 --untracked-files=all) { throw 'dirty checkout' }

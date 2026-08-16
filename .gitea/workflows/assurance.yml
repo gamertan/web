@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: assurance
+on:
+  schedule:
+    - cron: '17 9 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  assurance:
+    runs-on: himesan-go1266
+    timeout-minutes: 35
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: off
+    steps:
+      - name: Require the repository owner
+        run: test "$GITHUB_ACTOR" = gamertan
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify Go toolchain and modules
+        run: |
+          test "$(go env GOVERSION)" = go1.26.6
+          go mod download all
+          go mod verify
+      - name: Scan known vulnerabilities
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+      - name: Run bounded fuzz campaigns
+        run: |
+          go test ./requestmeta -run '^$' -fuzz '^FuzzForwardedChain$' -fuzztime 30s
+          go test ./analytics -run '^$' -fuzz '^FuzzJSONL$' -fuzztime 30s
+      - name: Verify reproducible starter build
+        run: |
+          mkdir -p "$RUNNER_TEMP/build-a" "$RUNNER_TEMP/build-b"
+          go build -trimpath -buildvcs=false -o "$RUNNER_TEMP/build-a/basic" ./starters/basic
+          go build -trimpath -buildvcs=false -o "$RUNNER_TEMP/build-b/basic" ./starters/basic
+          cmp "$RUNNER_TEMP/build-a/basic" "$RUNNER_TEMP/build-b/basic"
+          sha256sum "$RUNNER_TEMP/build-a/basic"
+      - name: Require an unchanged checkout
+        run: test -z "$(git status --porcelain=v1 --untracked-files=all)"
