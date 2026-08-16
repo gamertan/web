@@ -76,19 +76,28 @@ func RequireHTTPS(next http.Handler) http.Handler {
 // SameOrigin accepts browser requests that are demonstrably same-origin. It
 // rejects contradictory fetch metadata even when Origin is absent.
 func SameOrigin(request *http.Request, allowedOrigin string) bool {
-	if site := strings.ToLower(strings.TrimSpace(request.Header.Get("Sec-Fetch-Site"))); site != "" && site != "same-origin" && site != "none" {
+	site := strings.ToLower(strings.TrimSpace(request.Header.Get("Sec-Fetch-Site")))
+	if site != "" && site != "same-origin" && site != "none" {
 		return false
 	}
 	origin := strings.TrimSpace(request.Header.Get("Origin"))
 	if origin == "" {
-		return true
+		if site == "same-origin" || site == "none" {
+			return true
+		}
+		switch request.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			return true
+		default:
+			return false
+		}
 	}
 	want, err := url.Parse(allowedOrigin)
-	if err != nil || want.Scheme == "" || want.Host == "" || want.Path != "" {
+	if err != nil || want.Scheme == "" || want.Host == "" || want.Path != "" || want.RawQuery != "" || want.Fragment != "" || want.User != nil {
 		return false
 	}
 	got, err := url.Parse(origin)
-	return err == nil && strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) && got.Path == "" && got.RawQuery == "" && got.Fragment == ""
+	return err == nil && got.User == nil && strings.EqualFold(got.Scheme, want.Scheme) && strings.EqualFold(got.Host, want.Host) && got.Path == "" && got.RawQuery == "" && got.Fragment == ""
 }
 
 // CSRFToken binds a purpose to opaque session secret material.

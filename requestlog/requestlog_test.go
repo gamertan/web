@@ -138,6 +138,20 @@ func TestJSONLRejectsInvalidRecord(t *testing.T) {
 	}
 }
 
+func TestRecordRejectsUnboundedNumericFields(t *testing.T) {
+	base := Record{Version: RecordVersion, Timestamp: time.Unix(100, 0), Method: "GET", Route: "home", Status: 200}
+	tooManyBytes := base
+	tooManyBytes.Bytes = maxRecordBytes + 1
+	if err := tooManyBytes.Validate(); err == nil {
+		t.Fatal("unbounded byte count accepted")
+	}
+	tooLong := base
+	tooLong.DurationMicros = maxRecordDurationMicros + 1
+	if err := tooLong.Validate(); err == nil {
+		t.Fatal("unbounded duration accepted")
+	}
+}
+
 func TestJSONLRejectsSymlinkDestination(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink creation is privilege-dependent on Windows")

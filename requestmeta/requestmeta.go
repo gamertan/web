@@ -191,7 +191,7 @@ func parseForwardedFor(value string) ([]netip.Addr, error) {
 	result := make([]netip.Addr, 0, len(parts))
 	for _, part := range parts {
 		address, err := netip.ParseAddr(strings.TrimSpace(part))
-		if err != nil {
+		if err != nil || address.Zone() != "" {
 			return nil, ErrInvalidForwarding
 		}
 		result = append(result, address.Unmap())

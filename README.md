@@ -2,8 +2,8 @@
 
 # Gamertan Web Foundations
 
-> Status: unreleased development work toward `v0.1.0-preview.1`. No install
-> coordinate is promised until the reviewed public snapshot is tagged.
+> Status: `v0.1.0-preview.1` public preview. APIs may change before a stable
+> release; Linux is the maintained release platform.
 
 Small, composable Go packages for the unglamorous boundaries of a careful web
 application: request identity, structured request logs, browser security,
@@ -16,6 +16,20 @@ deployment. Each package works with `net/http` and can be adopted independently.
 The first preview targets modest Linux servers, local files, SQLite, and normal
 Go binaries. It requires no Redis, message broker, hosted identity provider,
 telemetry service, or JavaScript framework.
+
+## Install
+
+Pin the preview in an application module, then import only the packages that
+application needs:
+
+```bash
+go get gamertan.com/web@v0.1.0-preview.1
+go mod verify
+```
+
+Canonical source, issues, security policy, and release notes live on
+[Gamertan Gitea](https://gitea.speelman.ca/gamertan/web). GitHub is a read-only
+discovery snapshot rather than a second release origin.
 
 Linux is the required and supported release platform. WSL may be used as a
 Linux development environment. Native Windows is not a release gate or support

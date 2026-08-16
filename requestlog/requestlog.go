@@ -16,6 +16,11 @@ import (
 
 const RecordVersion = 1
 
+const (
+	maxRecordBytes          int64 = 1 << 40
+	maxRecordDurationMicros int64 = int64((7 * 24 * time.Hour) / time.Microsecond)
+)
+
 // Record is deliberately stable and append-log friendly. Sensitive fields are
 // populated only when explicitly enabled by Policy.
 type Record struct {
@@ -38,7 +43,7 @@ type Record struct {
 // Validate rejects records that cannot have been produced by this package's
 // bounded middleware contract.
 func (record Record) Validate() error {
-	if record.Version != RecordVersion || record.Timestamp.IsZero() || !boundedField(record.Method, 16, false) || !boundedField(record.Route, 256, false) || record.Status < 100 || record.Status > 999 || record.Bytes < 0 || record.DurationMicros < 0 {
+	if record.Version != RecordVersion || record.Timestamp.IsZero() || !boundedField(record.Method, 16, false) || !boundedField(record.Route, 256, false) || record.Status < 100 || record.Status > 999 || record.Bytes < 0 || record.Bytes > maxRecordBytes || record.DurationMicros < 0 || record.DurationMicros > maxRecordDurationMicros {
 		return errors.New("requestlog: invalid record")
 	}
 	fields := []struct {

@@ -27,6 +27,39 @@ func TestSameOriginRejectsCrossSiteAndContradiction(t *testing.T) {
 	}
 }
 
+func TestSameOriginRequiresEvidenceForUnsafeRequests(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "https://example.test/change", nil)
+	if SameOrigin(request, "https://example.test") {
+		t.Fatal("unsafe request without origin evidence accepted")
+	}
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	if !SameOrigin(request, "https://example.test") {
+		t.Fatal("same-origin fetch metadata rejected")
+	}
+	request = httptest.NewRequest(http.MethodGet, "https://example.test/read", nil)
+	if !SameOrigin(request, "https://example.test") {
+		t.Fatal("safe request without browser metadata rejected")
+	}
+}
+
+func TestSameOriginRejectsMalformedConfiguredAndPresentedOrigins(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "https://example.test/change", nil)
+	request.Header.Set("Origin", "https://example.test")
+	for _, allowed := range []string{
+		"https://user@example.test",
+		"https://example.test?scope=wrong",
+		"https://example.test#wrong",
+	} {
+		if SameOrigin(request, allowed) {
+			t.Fatalf("configured origin %q accepted", allowed)
+		}
+	}
+	request.Header.Set("Origin", "https://user@example.test")
+	if SameOrigin(request, "https://example.test") {
+		t.Fatal("origin containing user information accepted")
+	}
+}
+
 func TestCSRFIsPurposeBound(t *testing.T) {
 	secret := []byte("0123456789abcdef0123456789abcdef")
 	token, err := CSRFToken(secret, "account:update")

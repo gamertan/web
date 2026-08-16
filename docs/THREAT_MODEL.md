@@ -12,6 +12,11 @@ and session identifiers, digest-only session storage, Argon2id passwords,
 constant-time comparisons, same-origin and CSRF primitives, fail-closed storage
 errors, and separate safe/sensitive analytics projections.
 
+Unsafe methods without an exact Origin or trustworthy same-origin Fetch
+Metadata fail the origin check. Authentication middleware fails closed when its
+service or `__Host-` cookie policy is invalid. Imported request records have
+bounded byte and duration fields before analytics sums them.
+
 The toolkit does not sandbox application handlers, secure an incorrectly
 configured reverse proxy, authorize application routes automatically, encrypt a
 compromised host, or decide how long an operator may lawfully retain personal

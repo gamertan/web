@@ -192,6 +192,9 @@ func (service *Service) Session(ctx context.Context, token string) (Principal, e
 }
 
 func (service *Service) RevokeSession(ctx context.Context, token string) error {
+	if len(token) < 32 || len(token) > 128 {
+		return ErrSessionNotFound
+	}
 	digest := sha256.Sum256([]byte(token))
 	return service.repository.DeleteSession(ctx, digest)
 }

@@ -36,6 +36,13 @@ func TestCookieRequiresHostPrefix(t *testing.T) {
 	}
 }
 
+func TestSessionCookieRejectsShortToken(t *testing.T) {
+	config := CookieConfig{Name: "__Host-app_session", Lifetime: time.Hour}
+	if err := SetSession(httptest.NewRecorder(), config, "predictable", time.Unix(100, 0)); err == nil {
+		t.Fatal("short session token accepted")
+	}
+}
+
 func TestCSRFUsesSessionAndPurpose(t *testing.T) {
 	token := strings.Repeat("s", 43)
 	csrf, err := CSRFToken(token, "profile:update")
@@ -63,6 +70,37 @@ func TestOptionalFailsClosedWhenSessionStorageIsUnavailable(t *testing.T) {
 	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
 	}
+}
+
+func TestOptionalFailsClosedWhenConfigurationIsInvalid(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		service *auth.Service
+		config  CookieConfig
+	}{
+		{name: "nil service", config: CookieConfig{Name: "__Host-app_session", Lifetime: time.Hour}},
+		{name: "invalid cookie", service: mustAuthService(t), config: CookieConfig{Name: "session", Lifetime: time.Hour}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			handler := Optional(test.service, test.config)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Fatal("handler ran with invalid authentication configuration")
+			}))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "https://example.test/", nil))
+			if response.Code != http.StatusServiceUnavailable || response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("status=%d cache=%q", response.Code, response.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
+
+func mustAuthService(t *testing.T) *auth.Service {
+	t.Helper()
+	service, err := auth.New(authHTTPRepository{}, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }
 
 type authHTTPRepository struct{ err error }

@@ -29,6 +29,30 @@ func TestSessionDistinguishesMissingFromUnavailableStorage(t *testing.T) {
 	}
 }
 
+func TestRevokeSessionRejectsInvalidTokenBeforeStorage(t *testing.T) {
+	repository := &recordingRepository{}
+	service, err := New(repository, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = service.RevokeSession(t.Context(), "short"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+	if repository.deleted {
+		t.Fatal("storage called for invalid token")
+	}
+}
+
+type recordingRepository struct {
+	repositoryStub
+	deleted bool
+}
+
+func (repository *recordingRepository) DeleteSession(context.Context, [32]byte) error {
+	repository.deleted = true
+	return nil
+}
+
 type repositoryStub struct{ sessionErr error }
 
 func (repositoryStub) CreateUser(context.Context, User, string) error { return nil }

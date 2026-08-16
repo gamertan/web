@@ -40,7 +40,7 @@ func SetSession(response http.ResponseWriter, config CookieConfig, token string,
 	if err := config.Validate(); err != nil {
 		return err
 	}
-	if token == "" || len(token) > 128 {
+	if len(token) < 32 || len(token) > 128 {
 		return errors.New("authhttp: invalid session token")
 	}
 	sameSite := config.SameSite
@@ -64,16 +64,25 @@ func ClearSession(response http.ResponseWriter, config CookieConfig) error {
 }
 
 func SessionToken(request *http.Request, config CookieConfig) (string, bool) {
+	if config.Validate() != nil {
+		return "", false
+	}
 	cookie, err := request.Cookie(config.Name)
-	if err != nil || cookie.Value == "" || len(cookie.Value) > 128 {
+	if err != nil || len(cookie.Value) < 32 || len(cookie.Value) > 128 {
 		return "", false
 	}
 	return cookie.Value, true
 }
 
 func Optional(service *auth.Service, config CookieConfig) func(http.Handler) http.Handler {
+	configurationValid := service != nil && config.Validate() == nil
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			if !configurationValid {
+				response.Header().Set("Cache-Control", "no-store")
+				http.Error(response, "authentication unavailable", http.StatusServiceUnavailable)
+				return
+			}
 			if token, ok := SessionToken(request, config); ok {
 				if principal, err := service.Session(request.Context(), token); err == nil {
 					request = request.WithContext(auth.WithPrincipal(request.Context(), principal))

@@ -56,6 +56,16 @@ func TestResolverRejectsMalformedTrustedForwarding(t *testing.T) {
 	}
 }
 
+func TestResolverRejectsForwardedIPv6Zone(t *testing.T) {
+	resolver, _ := New(Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, Random: strings.NewReader(strings.Repeat("c", 16))})
+	request := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	request.Header.Set("X-Forwarded-For", "fe80::1%eth0")
+	if _, err := resolver.Resolve(request); !errors.Is(err, ErrInvalidForwarding) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestResolverRejectsAmbiguousTrustedForwarding(t *testing.T) {
 	resolver, _ := New(Config{TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}, Random: strings.NewReader(strings.Repeat("d", 16))})
 	request := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
