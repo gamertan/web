@@ -2,7 +2,6 @@
 
 .gitattributes
 .gitea/workflows/assurance.yml
-.gitea/workflows/cross-platform.yml
 .gitea/workflows/verify.yml
 .gitignore
 CHANGELOG.md
@@ -47,7 +46,6 @@ scripts/export-public.sh
 scripts/public-snapshot.allow
 scripts/test-public-snapshot.sh
 scripts/verify.sh
-scripts/verify.ps1
 starters/basic/.env.example
 starters/basic/README.md
 starters/basic/main.go

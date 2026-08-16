@@ -17,6 +17,11 @@ The first preview targets modest Linux servers, local files, SQLite, and normal
 Go binaries. It requires no Redis, message broker, hosted identity provider,
 telemetry service, or JavaScript framework.
 
+Linux is the required and supported release platform. WSL may be used as a
+Linux development environment. Native Windows is not a release gate or support
+promise; downstream users may evaluate the ordinary Go packages elsewhere
+without turning that portability into a maintained compatibility claim.
+
 ## Packages
 
 - `requestmeta`: trusted-proxy resolution, HTTPS/origin metadata, and request IDs.
