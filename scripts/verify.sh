@@ -10,5 +10,5 @@ go test -race ./...
 go vet ./...
 build_dir=$(mktemp -d)
 trap 'rm -rf "$build_dir"' EXIT
-go build -trimpath -o "$build_dir/basic" ./starters/basic
+go build -buildvcs=false -trimpath -o "$build_dir/basic" ./starters/basic
 git diff --check

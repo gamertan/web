@@ -30,7 +30,10 @@ authsqlite/store_test.go
 docs/ADOPTION.md
 docs/ARCHITECTURE.md
 docs/DEPENDENCIES.md
+docs/GETTING_STARTED.md
+docs/MODULES.md
 docs/PUBLIC_SNAPSHOT.md
+docs/SANDWICH_HIME.md
 docs/SERVICES_ROADMAP.md
 docs/THREAT_MODEL.md
 go.mod

@@ -2,15 +2,16 @@
 
 # Architecture
 
-The dependency direction is intentionally one-way:
+The package dependency direction is intentionally one-way:
 
 ```text
-net/http application
-  -> requestmeta
-  -> requestlog / websec / abuse / authhttp
-  -> auth and analytics interfaces
-  -> optional authsqlite and JSONL adapters
+analytics ──> requestlog ──> requestmeta
+abuse ─────────────────────> requestmeta
+authhttp ──> websec ───────> requestmeta
+authhttp ──> auth <───────── authsqlite
 ```
+
+An ordinary `net/http` application composes whichever branches it needs.
 
 Packages never own application routes, templates, authorization policy, cache
 policy, or deployment. Middleware communicates through typed request context.
@@ -20,4 +21,5 @@ time.
 
 The package model is developed from explicit threat and data contracts, not by
 moving an existing application's internals into a shared directory. See
-[ADOPTION.md](ADOPTION.md).
+[ADOPTION.md](ADOPTION.md), [GETTING_STARTED.md](GETTING_STARTED.md), and the
+[module-boundary policy](MODULES.md).

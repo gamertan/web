@@ -15,3 +15,8 @@ go run ./starters/basic -listen 127.0.0.1:8080
 
 Production configuration and secrets belong outside the source tree. This
 starter does not load `.env` files automatically.
+
+Continue with the [getting-started guide](../../docs/GETTING_STARTED.md) for
+package selection and middleware order. To replace the plain-text response
+with typed HTML without changing ownership of the server, follow
+[HTML with Sandwich Hime](../../docs/SANDWICH_HIME.md).

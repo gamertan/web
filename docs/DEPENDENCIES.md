@@ -13,6 +13,13 @@ Applications that do not import `auth` or `authsqlite` do not link those
 implementations into their binaries. Optional GeoIP enrichment is an interface
 only; the base toolkit performs no lookup and adds no GeoIP dependency.
 
+All packages currently share one Go module, so these requirements remain
+visible in the module graph even when an application imports only
+`requestmeta`. Go still avoids compiling or linking unused packages. A future
+nested module may isolate a heavyweight adapter such as `authsqlite` when its
+independent dependency and release lifecycle justify the additional tags,
+vanity metadata, and CI. See [MODULES.md](MODULES.md).
+
 `go.sum`, `go mod verify`, checksum-database verification, vulnerability
 scanning, and the public snapshot allowlist are release gates. Binary
 distributors remain responsible for preserving all applicable upstream notices.

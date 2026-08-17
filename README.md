@@ -27,6 +27,16 @@ go get gamertan.com/web@v0.1.0-preview.1
 go mod verify
 ```
 
+An application may also name the first package it intends to adopt:
+
+```bash
+go get gamertan.com/web/requestmeta@v0.1.0-preview.1
+```
+
+The version belongs to the `gamertan.com/web` module. Go compiles and links
+only the packages the application imports. See the [getting-started guide](docs/GETTING_STARTED.md)
+and [module-boundary policy](docs/MODULES.md) before choosing a first slice.
+
 Canonical source, issues, security policy, and release notes live on
 [Gamertan Gitea](https://gitea.speelman.ca/gamertan/web). GitHub is a read-only
 discovery snapshot rather than a second release origin.
@@ -38,16 +48,33 @@ without turning that portability into a maintained compatibility claim.
 
 ## Packages
 
-- `requestmeta`: trusted-proxy resolution, HTTPS/origin metadata, and request IDs.
-- `requestlog`: bounded versioned records, middleware, sinks, and private JSONL.
-- `websec`: headers, origin checks, CSRF, redirects, body limits, and rate limits.
-- `abuse`: application-classified request abuse with pluggable persistence.
-- `auth`, `authhttp`, `authsqlite`: passwords, sessions, permissions, cookies,
+- [`requestmeta`](requestmeta): trusted-proxy resolution, HTTPS/origin metadata,
+  and request IDs.
+- [`requestlog`](requestlog): bounded versioned records, middleware, sinks, and
+  private JSONL.
+- [`websec`](websec): headers, origin checks, CSRF, redirects, body limits, and
+  rate limits.
+- [`abuse`](abuse): application-classified request abuse with pluggable persistence.
+- [`auth`](auth), [`authhttp`](authhttp), and [`authsqlite`](authsqlite):
+  passwords, sessions, permissions, cookies,
   and a no-CGO SQLite adapter.
-- `analytics`: safe and sensitive aggregate projections over request records.
+- [`analytics`](analytics): safe and sensitive aggregate projections over request
+  records.
 
 The copyable starter under `starters/basic` demonstrates the packages without
 turning them into a router or template system.
+
+## HTML and templates
+
+Web Foundations deliberately does not provide a template language. Sandwich
+Hime is the preferred companion for Gamertan applications that want HTML-first,
+typed, ahead-of-time Go templates. The two projects remain independently
+usable: this module does not import the `sando` runtime, and Sandwich Hime does
+not own middleware, authentication, logging, routing, or deployment.
+
+See [HTML with Sandwich Hime](docs/SANDWICH_HIME.md), then follow the official
+[first site tutorial](https://sandwichhime.com/docs/tutorial/) and
+[application integration tutorial](https://sandwichhime.com/docs/tutorial/application/).
 
 ## Security boundary
 

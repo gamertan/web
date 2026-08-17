@@ -6,7 +6,7 @@ cd "$root"
 failed=0
 while IFS= read -r -d '' file; do
 	case $file in
-		./.git/*|./LICENSES/*|./go.sum) continue ;;
+		./.git|./.git/*|./LICENSES/*|./go.sum) continue ;;
 		./starters/*|./examples/*) expected=0BSD ;;
 		./scripts/*|./.gitea/*|./services/*) expected=AGPL-3.0-only ;;
 		*) expected=MPL-2.0 ;;
