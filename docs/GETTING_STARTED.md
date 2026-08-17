@@ -17,13 +17,15 @@ install an imagined framework lifecycle around it.
 | Users, credentials, permissions, and sessions | `auth` | Roles, permissions, login UX, and account policy |
 | Secure browser cookies around `auth` | `authhttp` | Login routes, redirects, pages, and authorization decisions |
 | SQLite persistence for `auth` | `authsqlite` | Database placement, backup, migration approval, and recovery |
+| One account across organizations and teams | `organizations`, `authsqlite` | Invitation UX, organization naming, and lifecycle policy |
+| Organization-scoped authorization | `access`, `authsqlite` | Role definitions, resource ownership, and route enforcement |
 | Aggregate projections over request records | `analytics` | Collection policy, access control, report UI, and retention |
 
 The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.1
+go get gamertan.com/web/requestmeta@v0.1.0-preview.2
 go mod verify
 ```
 
@@ -78,3 +80,7 @@ Deeper tutorials for accounts, analytics, and persistent abuse policy will be
 written after multiple application migrations have validated those seams. The
 preview documentation describes demonstrated contracts rather than prescribing
 an unfinished application framework.
+
+See [Organizations and scoped access](ORGANIZATIONS.md) before storing tenant
+data. In particular, do not interpret a platform role as permission to inspect
+an organization's records.

@@ -9,6 +9,8 @@ analytics ──> requestlog ──> requestmeta
 abuse ─────────────────────> requestmeta
 authhttp ──> websec ───────> requestmeta
 authhttp ──> auth <───────── authsqlite
+organizations <───────────── authsqlite
+access <──────────────────── authsqlite
 ```
 
 An ordinary `net/http` application composes whichever branches it needs.
@@ -18,6 +20,12 @@ policy, or deployment. Middleware communicates through typed request context.
 Storage and reporting surfaces are interfaces so an application can retain its
 existing database and user interface while replacing one implementation at a
 time.
+
+Authentication establishes one user identity and session. Organizations own
+projects, environments, and services; teams group organization members; scoped
+access resolves roles against that hierarchy. Existing `auth` roles remain a
+platform-level compatibility surface and do not implicitly grant access to an
+organization's data. Emergency access is a separate, expiring, audited grant.
 
 The package model is developed from explicit threat and data contracts, not by
 moving an existing application's internals into a shared directory. See

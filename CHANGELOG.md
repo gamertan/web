@@ -2,6 +2,16 @@
 
 # Changelog
 
+## v0.1.0-preview.2 — 2026-08-17
+
+- Add storage-neutral organizations, teams, projects, environments, services,
+  single-use invitations, and independently scoped access roles.
+- Separate platform-level authentication roles from organization data access.
+- Add expiring break-glass grants with transactional organization-visible audit
+  events and a no-CGO SQLite implementation.
+- Keep `v0.1.0-preview.1` immutable; applications adopt these additive packages
+  by explicitly selecting Preview 2.
+
 ## v0.1.0-preview.1 — 2026-08-16
 
 - Establish independent request metadata, logging, browser security, abuse,

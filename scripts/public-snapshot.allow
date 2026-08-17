@@ -14,6 +14,8 @@ README.md
 SECURITY.md
 abuse/abuse.go
 abuse/abuse_test.go
+access/access.go
+access/access_test.go
 analytics/analytics.go
 analytics/analytics_test.go
 analytics/fuzz_test.go
@@ -27,11 +29,14 @@ authhttp/authhttp.go
 authhttp/authhttp_test.go
 authsqlite/store.go
 authsqlite/store_test.go
+authsqlite/access.go
+authsqlite/organizations.go
 docs/ADOPTION.md
 docs/ARCHITECTURE.md
 docs/DEPENDENCIES.md
 docs/GETTING_STARTED.md
 docs/MODULES.md
+docs/ORGANIZATIONS.md
 docs/PUBLIC_SNAPSHOT.md
 docs/SANDWICH_HIME.md
 docs/SERVICES_ROADMAP.md
@@ -44,6 +49,8 @@ requestlog/requestlog_test.go
 requestmeta/fuzz_test.go
 requestmeta/requestmeta.go
 requestmeta/requestmeta_test.go
+organizations/organizations.go
+organizations/organizations_test.go
 scripts/check-licenses.sh
 scripts/export-public.sh
 scripts/public-snapshot.allow

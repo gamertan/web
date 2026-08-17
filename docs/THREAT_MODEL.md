@@ -10,7 +10,9 @@ selected storage adapters are trusted.
 Controls include explicit proxy trust, bounded parsing, cryptographic request
 and session identifiers, digest-only session storage, Argon2id passwords,
 constant-time comparisons, same-origin and CSRF primitives, fail-closed storage
-errors, and separate safe/sensitive analytics projections.
+errors, separate safe/sensitive analytics projections, organization-scoped
+bindings, single-use invitation digests, and short-lived audited break-glass
+grants.
 
 Unsafe methods without an exact Origin or trustworthy same-origin Fetch
 Metadata fail the origin check. Authentication middleware fails closed when its
@@ -21,6 +23,12 @@ The toolkit does not sandbox application handlers, secure an incorrectly
 configured reverse proxy, authorize application routes automatically, encrypt a
 compromised host, or decide how long an operator may lawfully retain personal
 request evidence.
+
+Applications must pass the authenticated user and requested resource hierarchy
+to `access.Authorize`; possessing a platform-level `auth` role does not bypass
+that decision. Team membership is resolved by the repository rather than
+accepted from request input. Break-glass access lasts at most one hour and is
+not a substitute for ordinary role policy.
 
 Local storage adapters assume the parent directory and host account are trusted.
 They reject a symlink at the configured final path and apply private file modes,
