@@ -21,6 +21,7 @@ import (
 var (
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 	ErrInactiveUser       = errors.New("auth: account is not active")
+	ErrPasswordUnchanged  = errors.New("auth: new password must differ from the current password")
 	ErrSessionNotFound    = errors.New("auth: session not found")
 	ErrUserNotFound       = errors.New("auth: user not found")
 	identifierPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{2,63}$`)
@@ -29,6 +30,7 @@ var (
 type User struct {
 	ID, Username, Email, DisplayName, Status string
 	CreatedAt, UpdatedAt                     time.Time
+	PasswordChangeRequired                   bool
 }
 
 type Principal struct {
@@ -59,6 +61,8 @@ type PolicySeed struct {
 type Repository interface {
 	CreateUser(context.Context, User, string) error
 	CredentialByIdentifier(context.Context, string) (User, string, error)
+	CredentialByUserID(context.Context, string) (User, string, error)
+	ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error
 	UpdateLastLogin(context.Context, string, time.Time) error
 	CreateSession(context.Context, Session) error
 	PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error)
@@ -102,7 +106,10 @@ func New(repository Repository, options Options) (*Service, error) {
 	return &Service{repository: repository, random: options.Random, now: options.Now, touchInterval: options.TouchInterval}, nil
 }
 
-type CreateUser struct{ Username, Email, DisplayName, Password string }
+type CreateUser struct {
+	Username, Email, DisplayName, Password string
+	RequirePasswordChange                  bool
+}
 
 func (service *Service) CreateUser(ctx context.Context, input CreateUser) (User, error) {
 	username := strings.TrimSpace(input.Username)
@@ -120,11 +127,55 @@ func (service *Service) CreateUser(ctx context.Context, input CreateUser) (User,
 		return User{}, err
 	}
 	now := service.now().UTC()
-	user := User{ID: id, Username: username, Email: email, DisplayName: displayName, Status: "active", CreatedAt: now, UpdatedAt: now}
+	user := User{ID: id, Username: username, Email: email, DisplayName: displayName, Status: "active", CreatedAt: now, UpdatedAt: now, PasswordChangeRequired: input.RequirePasswordChange}
 	if err = service.repository.CreateUser(ctx, user, hash); err != nil {
 		return User{}, err
 	}
 	return user, nil
+}
+
+// GenerateTemporaryPassword returns 256 bits of URL-safe cryptographic
+// entropy suitable for an application-managed one-time bootstrap credential.
+func GenerateTemporaryPassword(random io.Reader) (string, error) {
+	if random == nil {
+		random = rand.Reader
+	}
+	return randomToken(random, 32)
+}
+
+// ChangePassword verifies the current credential, rejects reuse, replaces the
+// Argon2id hash, clears the password-change requirement, and revokes every
+// existing session through one repository operation.
+func (service *Service) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
+	user, currentHash, err := service.repository.CredentialByUserID(ctx, strings.TrimSpace(userID))
+	if errors.Is(err, ErrUserNotFound) {
+		_ = VerifyPassword(dummyPasswordHash, currentPassword)
+		return ErrInvalidCredentials
+	}
+	if err != nil {
+		_ = VerifyPassword(dummyPasswordHash, currentPassword)
+		return fmt.Errorf("auth: load credentials: %w", err)
+	}
+	if !VerifyPassword(currentHash, currentPassword) {
+		return ErrInvalidCredentials
+	}
+	if user.Status != "active" {
+		return ErrInactiveUser
+	}
+	if currentPassword == newPassword {
+		return ErrPasswordUnchanged
+	}
+	newHash, err := HashPasswordWithRandom(newPassword, service.random)
+	if err != nil {
+		return err
+	}
+	if err = service.repository.ReplacePasswordAndRevokeSessions(ctx, user.ID, currentHash, newHash, service.now().UTC()); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return ErrInvalidCredentials
+		}
+		return fmt.Errorf("auth: replace password: %w", err)
+	}
+	return nil
 }
 
 func (service *Service) Authenticate(ctx context.Context, identifier, password string, lifetime time.Duration) (string, Principal, error) {

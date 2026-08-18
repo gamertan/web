@@ -3,6 +3,8 @@
 package authsqlite
 
 import (
+	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,6 +54,79 @@ func TestServiceRoundTripWithApplicationPolicy(t *testing.T) {
 	}
 	if _, err = service.Session(t.Context(), token); err == nil {
 		t.Fatal("revoked session accepted")
+	}
+}
+
+func TestRequiredPasswordChangeRotatesCredentialAndRevokesSessions(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "accounts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Unix(3000, 0).UTC()
+	service, err := auth.New(store, auth.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.CreateUser(t.Context(), auth.CreateUser{Username: "bootstrap", Email: "bootstrap@example.test", DisplayName: "Bootstrap Operator", Password: "temporary bootstrap credential", RequirePasswordChange: true})
+	if err != nil || !user.PasswordChangeRequired {
+		t.Fatalf("user=%+v err=%v", user, err)
+	}
+	token, principal, err := service.Authenticate(t.Context(), user.Username, "temporary bootstrap credential", time.Hour)
+	if err != nil || !principal.User.PasswordChangeRequired {
+		t.Fatalf("principal=%+v err=%v", principal, err)
+	}
+	if err = service.ChangePassword(t.Context(), user.ID, "wrong current credential", "new permanent credential"); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("wrong current credential err=%v", err)
+	}
+	if _, err = service.Session(t.Context(), token); err != nil {
+		t.Fatalf("failed rotation revoked session: %v", err)
+	}
+	if err = service.ChangePassword(t.Context(), user.ID, "temporary bootstrap credential", "temporary bootstrap credential"); !errors.Is(err, auth.ErrPasswordUnchanged) {
+		t.Fatalf("reused credential err=%v", err)
+	}
+	if err = service.ChangePassword(t.Context(), user.ID, "temporary bootstrap credential", "new permanent credential"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Session(t.Context(), token); !errors.Is(err, auth.ErrSessionNotFound) {
+		t.Fatalf("old session survived rotation: %v", err)
+	}
+	if _, _, err = service.Authenticate(t.Context(), user.Username, "temporary bootstrap credential", time.Hour); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("temporary credential survived rotation: %v", err)
+	}
+	_, principal, err = service.Authenticate(t.Context(), user.Username, "new permanent credential", time.Hour)
+	if err != nil || principal.User.PasswordChangeRequired {
+		t.Fatalf("rotated principal=%+v err=%v", principal, err)
+	}
+}
+
+func TestMigrationAddsPasswordRequirementWithoutChangingExistingUsers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "accounts.db")
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.Exec(`CREATE TABLE gwf_users (id TEXT PRIMARY KEY, username TEXT NOT NULL, username_normalized TEXT NOT NULL UNIQUE, email TEXT NOT NULL, email_normalized TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_login_at INTEGER)`)
+	if err == nil {
+		_, err = database.Exec(`INSERT INTO gwf_users(id,username,username_normalized,email,email_normalized,display_name,status,created_at,updated_at) VALUES('existing-user','existing','existing','existing@example.test','existing@example.test','Existing','active',1,1)`)
+	}
+	if closeErr := database.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	var required, migrations int
+	if err = store.db.QueryRow(`SELECT password_change_required FROM gwf_users WHERE id='existing-user'`).Scan(&required); err != nil || required != 0 {
+		t.Fatalf("required=%d err=%v", required, err)
+	}
+	if err = store.db.QueryRow(`SELECT COUNT(*) FROM gamertan_web_migrations WHERE version=3`).Scan(&migrations); err != nil || migrations != 1 {
+		t.Fatalf("migrations=%d err=%v", migrations, err)
 	}
 }
 

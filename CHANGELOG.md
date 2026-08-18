@@ -2,6 +2,18 @@
 
 # Changelog
 
+## v0.1.0-preview.3 — 2026-08-18
+
+- Add cryptographically generated temporary credentials and an explicit
+  password-change-required account state.
+- Replace credentials, clear the requirement, and revoke all existing sessions
+  in one repository transaction after verifying the current password.
+- Migrate existing SQLite users with the new requirement disabled; applications
+  continue to own first-login routing, private credential delivery, and audit
+  policy.
+- Keep Preview 1 and Preview 2 immutable; applications select Preview 3
+  explicitly when adopting forced bootstrap rotation.
+
 ## v0.1.0-preview.2 — 2026-08-17
 
 - Add storage-neutral organizations, teams, projects, environments, services,

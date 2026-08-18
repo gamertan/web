@@ -14,6 +14,15 @@ errors, separate safe/sensitive analytics projections, organization-scoped
 bindings, single-use invitation digests, and short-lived audited break-glass
 grants.
 
+An application may create an account with a cryptographically generated
+temporary credential and `RequirePasswordChange`. Successful rotation compares
+the current credential, replaces its Argon2id hash, clears the requirement, and
+revokes every session in one repository transaction. The application must
+restrict such a principal to password change and logout until rotation succeeds;
+the library does not infer route policy. Temporary credentials must be written
+to a private channel or mode-`0600` file and must never be printed into logs,
+manifests, process arguments, or deployment state.
+
 Unsafe methods without an exact Origin or trustworthy same-origin Fetch
 Metadata fail the origin check. Authentication middleware fails closed when its
 service or `__Host-` cookie policy is invalid. Imported request records have

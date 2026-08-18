@@ -59,6 +59,12 @@ func (repositoryStub) CreateUser(context.Context, User, string) error { return n
 func (repositoryStub) CredentialByIdentifier(context.Context, string) (User, string, error) {
 	return User{}, "", ErrUserNotFound
 }
+func (repositoryStub) CredentialByUserID(context.Context, string) (User, string, error) {
+	return User{}, "", ErrUserNotFound
+}
+func (repositoryStub) ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error {
+	return nil
+}
 func (repositoryStub) UpdateLastLogin(context.Context, string, time.Time) error { return nil }
 func (repositoryStub) CreateSession(context.Context, Session) error             { return nil }
 func (repository repositoryStub) PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error) {

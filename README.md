@@ -56,8 +56,8 @@ without turning that portability into a maintained compatibility claim.
   rate limits.
 - [`abuse`](abuse): application-classified request abuse with pluggable persistence.
 - [`auth`](auth), [`authhttp`](authhttp), and [`authsqlite`](authsqlite):
-  passwords, sessions, platform-level permissions, cookies, and a no-CGO
-  SQLite adapter.
+  passwords, forced first-login rotation, session revocation, platform-level
+  permissions, cookies, and a no-CGO SQLite adapter.
 - [`organizations`](organizations) and [`access`](access): organizations,
   teams, invitations, resource hierarchy, scoped roles, and audited temporary
   access without turning platform operation into tenant-data access.

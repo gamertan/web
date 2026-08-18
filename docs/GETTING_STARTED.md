@@ -25,7 +25,7 @@ The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.2
+go get gamertan.com/web/requestmeta@v0.1.0-preview.3
 go mod verify
 ```
 
@@ -50,6 +50,22 @@ by itself; it becomes usable only when the immediate peer and skipped proxy
 hops satisfy the resolver's trust policy. Metadata, authentication, or storage
 failures that affect security decisions should stop the request rather than
 quietly changing identity or policy.
+
+## Bootstrap an account without inventing a permanent password
+
+`auth.GenerateTemporaryPassword` returns 256 bits of URL-safe cryptographic
+entropy. An application can store that value in a newly created private file
+and provision an account with `RequirePasswordChange: true`. The library does
+not write or print the credential because file ownership, operator identity,
+and delivery are application policy.
+
+After authentication, inspect `principal.User.PasswordChangeRequired`. Until it
+is false, permit only password change and logout. `auth.ChangePassword` verifies
+the current credential, rejects reuse, writes the new Argon2id hash, clears the
+requirement, and revokes every existing session atomically through the storage
+adapter. Clear the browser cookie and require a fresh login after success. Do
+not treat a redirect alone as enforcement; apply the restriction before every
+protected handler.
 
 ## Add HTML without merging responsibilities
 

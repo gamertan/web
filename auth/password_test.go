@@ -28,6 +28,19 @@ func TestPasswordEntropyFailsClosed(t *testing.T) {
 	}
 }
 
+func TestTemporaryPasswordUsesBoundedCryptographicEntropy(t *testing.T) {
+	password, err := GenerateTemporaryPassword(strings.NewReader(strings.Repeat("t", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(password) != 43 || ValidatePassword(password) != nil || strings.ContainsAny(password, " \t\r\n") {
+		t.Fatalf("temporary password length=%d", len(password))
+	}
+	if _, err = GenerateTemporaryPassword(errorReader{}); err == nil {
+		t.Fatal("temporary password accepted entropy failure")
+	}
+}
+
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, errors.New("no entropy") }

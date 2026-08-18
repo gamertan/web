@@ -109,6 +109,12 @@ func (authHTTPRepository) CreateUser(context.Context, auth.User, string) error {
 func (authHTTPRepository) CredentialByIdentifier(context.Context, string) (auth.User, string, error) {
 	return auth.User{}, "", auth.ErrUserNotFound
 }
+func (authHTTPRepository) CredentialByUserID(context.Context, string) (auth.User, string, error) {
+	return auth.User{}, "", auth.ErrUserNotFound
+}
+func (authHTTPRepository) ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error {
+	return nil
+}
 func (authHTTPRepository) UpdateLastLogin(context.Context, string, time.Time) error { return nil }
 func (authHTTPRepository) CreateSession(context.Context, auth.Session) error        { return nil }
 func (repository authHTTPRepository) PrincipalBySession(context.Context, [32]byte, time.Time) (auth.Principal, auth.Session, error) {

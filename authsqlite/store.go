@@ -77,7 +77,7 @@ func (store *Store) Migrate(ctx context.Context) error {
 	defer tx.Rollback()
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS gamertan_web_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)`,
-		`CREATE TABLE IF NOT EXISTS gwf_users (id TEXT PRIMARY KEY, username TEXT NOT NULL, username_normalized TEXT NOT NULL UNIQUE, email TEXT NOT NULL, email_normalized TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','suspended','disabled')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_login_at INTEGER)`,
+		`CREATE TABLE IF NOT EXISTS gwf_users (id TEXT PRIMARY KEY, username TEXT NOT NULL, username_normalized TEXT NOT NULL UNIQUE, email TEXT NOT NULL, email_normalized TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','suspended','disabled')), password_change_required INTEGER NOT NULL DEFAULT 0 CHECK(password_change_required IN (0,1)), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_login_at INTEGER)`,
 		`CREATE TABLE IF NOT EXISTS gwf_password_credentials (user_id TEXT PRIMARY KEY REFERENCES gwf_users(id) ON DELETE CASCADE, password_hash TEXT NOT NULL, changed_at INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS gwf_roles (name TEXT PRIMARY KEY, description TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS gwf_permissions (name TEXT PRIMARY KEY, description TEXT NOT NULL)`,
@@ -114,13 +114,45 @@ func (store *Store) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	hasPasswordRequirement, err := sqliteColumnExists(ctx, tx, "gwf_users", "password_change_required")
+	if err != nil {
+		return err
+	}
+	if !hasPasswordRequirement {
+		if _, err = tx.ExecContext(ctx, `ALTER TABLE gwf_users ADD COLUMN password_change_required INTEGER NOT NULL DEFAULT 0 CHECK(password_change_required IN (0,1))`); err != nil {
+			return err
+		}
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(1,?)`, time.Now().UTC().Unix()); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(2,?)`, time.Now().UTC().Unix()); err != nil {
 		return err
 	}
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(3,?)`, time.Now().UTC().Unix()); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func sqliteColumnExists(ctx context.Context, tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var position, notNull, primaryKey int
+		var name, kind string
+		var defaultValue sql.NullString
+		if err = rows.Scan(&position, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (store *Store) CreateUser(ctx context.Context, user auth.User, passwordHash string) error {
@@ -132,7 +164,7 @@ func (store *Store) CreateUser(ctx context.Context, user auth.User, passwordHash
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO gwf_users(id,username,username_normalized,email,email_normalized,display_name,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`, user.ID, user.Username, normalize(user.Username), user.Email, normalize(user.Email), user.DisplayName, user.Status, user.CreatedAt.Unix(), user.UpdatedAt.Unix())
+	_, err = tx.ExecContext(ctx, `INSERT INTO gwf_users(id,username,username_normalized,email,email_normalized,display_name,status,password_change_required,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, user.ID, user.Username, normalize(user.Username), user.Email, normalize(user.Email), user.DisplayName, user.Status, user.PasswordChangeRequired, user.CreatedAt.Unix(), user.UpdatedAt.Unix())
 	if err != nil {
 		return err
 	}
@@ -148,16 +180,67 @@ func (store *Store) CredentialByIdentifier(ctx context.Context, identifier strin
 	}
 	var user auth.User
 	var created, updated int64
+	var passwordChangeRequired int
 	var hash string
-	err := store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.created_at,u.updated_at,c.password_hash FROM gwf_users u JOIN gwf_password_credentials c ON c.user_id=u.id WHERE u.username_normalized=? OR u.email_normalized=?`, normalize(identifier), normalize(identifier)).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &created, &updated, &hash)
+	err := store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.password_change_required,u.created_at,u.updated_at,c.password_hash FROM gwf_users u JOIN gwf_password_credentials c ON c.user_id=u.id WHERE u.username_normalized=? OR u.email_normalized=?`, normalize(identifier), normalize(identifier)).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &passwordChangeRequired, &created, &updated, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.User{}, "", auth.ErrUserNotFound
 	}
 	if err != nil {
 		return auth.User{}, "", err
 	}
+	user.PasswordChangeRequired = passwordChangeRequired == 1
 	user.CreatedAt, user.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
 	return user, hash, nil
+}
+
+func (store *Store) CredentialByUserID(ctx context.Context, userID string) (auth.User, string, error) {
+	if !opaqueID(userID) {
+		return auth.User{}, "", auth.ErrUserNotFound
+	}
+	var user auth.User
+	var created, updated int64
+	var passwordChangeRequired int
+	var hash string
+	err := store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.password_change_required,u.created_at,u.updated_at,c.password_hash FROM gwf_users u JOIN gwf_password_credentials c ON c.user_id=u.id WHERE u.id=?`, userID).Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &passwordChangeRequired, &created, &updated, &hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return auth.User{}, "", auth.ErrUserNotFound
+	}
+	if err != nil {
+		return auth.User{}, "", err
+	}
+	user.PasswordChangeRequired = passwordChangeRequired == 1
+	user.CreatedAt, user.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
+	return user, hash, nil
+}
+
+func (store *Store) ReplacePasswordAndRevokeSessions(ctx context.Context, userID, expectedHash, newHash string, changedAt time.Time) error {
+	if !opaqueID(userID) || !text(expectedHash, 1024, false) || !text(newHash, 1024, false) || changedAt.IsZero() {
+		return auth.ErrInvalidCredentials
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE gwf_password_credentials SET password_hash=?,changed_at=? WHERE user_id=? AND password_hash=?`, newHash, changedAt.Unix(), userID, expectedHash)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return auth.ErrInvalidCredentials
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_users SET password_change_required=0,updated_at=? WHERE id=?`, changedAt.Unix(), userID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM gwf_auth_sessions WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (store *Store) UpdateLastLogin(ctx context.Context, userID string, when time.Time) error {
@@ -183,10 +266,12 @@ func (store *Store) PrincipalBySession(ctx context.Context, digest [32]byte, now
 	var principal auth.Principal
 	var session auth.Session
 	var created, updated, sessionCreated, expires, lastSeen int64
-	err := store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.created_at,u.updated_at,s.user_id,s.created_at,s.expires_at,s.last_seen_at FROM gwf_auth_sessions s JOIN gwf_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?`, digest[:], now.Unix()).Scan(&principal.User.ID, &principal.User.Username, &principal.User.Email, &principal.User.DisplayName, &principal.User.Status, &created, &updated, &session.UserID, &sessionCreated, &expires, &lastSeen)
+	var passwordChangeRequired int
+	err := store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.password_change_required,u.created_at,u.updated_at,s.user_id,s.created_at,s.expires_at,s.last_seen_at FROM gwf_auth_sessions s JOIN gwf_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?`, digest[:], now.Unix()).Scan(&principal.User.ID, &principal.User.Username, &principal.User.Email, &principal.User.DisplayName, &principal.User.Status, &passwordChangeRequired, &created, &updated, &session.UserID, &sessionCreated, &expires, &lastSeen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return auth.Principal{}, auth.Session{}, auth.ErrSessionNotFound
 	}
+	principal.User.PasswordChangeRequired = passwordChangeRequired == 1
 	if err != nil {
 		return auth.Principal{}, auth.Session{}, err
 	}
