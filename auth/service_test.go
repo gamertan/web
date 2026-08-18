@@ -65,6 +65,9 @@ func (repositoryStub) CredentialByUserID(context.Context, string) (User, string,
 func (repositoryStub) ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error {
 	return nil
 }
+func (repositoryStub) ResetPasswordAndRevokeSessions(context.Context, string, string, string, time.Time, AuditEvent) error {
+	return nil
+}
 func (repositoryStub) UpdateLastLogin(context.Context, string, time.Time) error { return nil }
 func (repositoryStub) CreateSession(context.Context, Session) error             { return nil }
 func (repository repositoryStub) PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error) {

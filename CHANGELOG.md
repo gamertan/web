@@ -2,6 +2,17 @@
 
 # Changelog
 
+## v0.1.0-preview.4 — 2026-08-18
+
+- Add an explicit local-administrator password recovery operation without
+  adding a public recovery endpoint or network protocol.
+- Atomically install a one-time Argon2id credential, restore mandatory password
+  rotation, revoke every session, and append a secret-free audit event.
+- Prove transaction rollback when the audit event cannot commit and document
+  private mode-`0600` delivery as application-owned policy.
+- Keep Previews 1–3 immutable; applications select Preview 4 explicitly when
+  adopting administrative recovery.
+
 ## v0.1.0-preview.3 — 2026-08-18
 
 - Add cryptographically generated temporary credentials and an explicit

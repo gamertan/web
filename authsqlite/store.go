@@ -243,6 +243,38 @@ func (store *Store) ReplacePasswordAndRevokeSessions(ctx context.Context, userID
 	return tx.Commit()
 }
 
+func (store *Store) ResetPasswordAndRevokeSessions(ctx context.Context, userID, expectedHash, newHash string, changedAt time.Time, audit auth.AuditEvent) error {
+	if !opaqueID(userID) || !text(expectedHash, 1024, false) || !text(newHash, 1024, false) || changedAt.IsZero() || !validAuditEvent(audit) || audit.ActorUserID != "" || audit.ResourceType != "user" || audit.ResourceID != userID || !audit.CreatedAt.Equal(changedAt) {
+		return auth.ErrInvalidCredentials
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE gwf_password_credentials SET password_hash=?,changed_at=? WHERE user_id=? AND password_hash=?`, newHash, changedAt.Unix(), userID, expectedHash)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return auth.ErrInvalidCredentials
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_users SET password_change_required=1,updated_at=? WHERE id=?`, changedAt.Unix(), userID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM gwf_auth_sessions WHERE user_id=?`, userID); err != nil {
+		return err
+	}
+	if err = appendAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (store *Store) UpdateLastLogin(ctx context.Context, userID string, when time.Time) error {
 	if !opaqueID(userID) || when.IsZero() {
 		return errors.New("authsqlite: invalid login update")
@@ -379,11 +411,23 @@ func (store *Store) GrantRole(ctx context.Context, userID, role string, when tim
 	return err
 }
 func (store *Store) AppendAudit(ctx context.Context, event auth.AuditEvent) error {
-	if !opaqueID(event.ID) || event.ActorUserID != "" && !opaqueID(event.ActorUserID) || !safeName(event.Action) || !safeName(event.ResourceType) || !text(event.ResourceID, 256, false) || !text(event.RequestID, 128, true) || !text(event.Summary, 1024, true) || event.CreatedAt.IsZero() {
+	if !validAuditEvent(event) {
 		return errors.New("authsqlite: invalid audit event")
 	}
-	_, err := store.db.ExecContext(ctx, `INSERT INTO gwf_audit_events(id,actor_user_id,action,resource_type,resource_id,request_id,summary,created_at) VALUES(?,NULLIF(?,''),?,?,?,?,?,?)`, event.ID, event.ActorUserID, event.Action, event.ResourceType, event.ResourceID, event.RequestID, event.Summary, event.CreatedAt.Unix())
+	return appendAudit(ctx, store.db, event)
+}
+
+type auditExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func appendAudit(ctx context.Context, execer auditExecer, event auth.AuditEvent) error {
+	_, err := execer.ExecContext(ctx, `INSERT INTO gwf_audit_events(id,actor_user_id,action,resource_type,resource_id,request_id,summary,created_at) VALUES(?,NULLIF(?,''),?,?,?,?,?,?)`, event.ID, event.ActorUserID, event.Action, event.ResourceType, event.ResourceID, event.RequestID, event.Summary, event.CreatedAt.Unix())
 	return err
+}
+
+func validAuditEvent(event auth.AuditEvent) bool {
+	return opaqueID(event.ID) && (event.ActorUserID == "" || opaqueID(event.ActorUserID)) && safeName(event.Action) && safeName(event.ResourceType) && text(event.ResourceID, 256, false) && text(event.RequestID, 128, true) && text(event.Summary, 1024, true) && !event.CreatedAt.IsZero()
 }
 
 func normalize(value string) string { return strings.ToLower(strings.TrimSpace(value)) }

@@ -115,6 +115,9 @@ func (authHTTPRepository) CredentialByUserID(context.Context, string) (auth.User
 func (authHTTPRepository) ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error {
 	return nil
 }
+func (authHTTPRepository) ResetPasswordAndRevokeSessions(context.Context, string, string, string, time.Time, auth.AuditEvent) error {
+	return nil
+}
 func (authHTTPRepository) UpdateLastLogin(context.Context, string, time.Time) error { return nil }
 func (authHTTPRepository) CreateSession(context.Context, auth.Session) error        { return nil }
 func (repository authHTTPRepository) PrincipalBySession(context.Context, [32]byte, time.Time) (auth.Principal, auth.Session, error) {

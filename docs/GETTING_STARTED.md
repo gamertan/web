@@ -25,7 +25,7 @@ The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.3
+go get gamertan.com/web/requestmeta@v0.1.0-preview.4
 go mod verify
 ```
 
@@ -66,6 +66,14 @@ requirement, and revokes every existing session atomically through the storage
 adapter. Clear the browser cookie and require a fresh login after success. Do
 not treat a redirect alone as enforcement; apply the restriction before every
 protected handler.
+
+For operator-led recovery, expose `auth.ResetPassword` only through a local
+administrative command—not a public HTTP endpoint. The operation installs an
+application-generated one-time credential, sets `PasswordChangeRequired`,
+revokes every existing session, and appends a secret-free audit event in the
+same repository transaction. Deliver that credential through an exclusive
+root-owned mode-`0600` file, delete it after successful rotation, and never put
+it in command arguments, stdout, logs, manifests, or deployment state.
 
 ## Add HTML without merging responsibilities
 

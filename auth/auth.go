@@ -63,6 +63,7 @@ type Repository interface {
 	CredentialByIdentifier(context.Context, string) (User, string, error)
 	CredentialByUserID(context.Context, string) (User, string, error)
 	ReplacePasswordAndRevokeSessions(context.Context, string, string, string, time.Time) error
+	ResetPasswordAndRevokeSessions(context.Context, string, string, string, time.Time, AuditEvent) error
 	UpdateLastLogin(context.Context, string, time.Time) error
 	CreateSession(context.Context, Session) error
 	PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error)
@@ -109,6 +110,13 @@ func New(repository Repository, options Options) (*Service, error) {
 type CreateUser struct {
 	Username, Email, DisplayName, Password string
 	RequirePasswordChange                  bool
+}
+
+// AdministrativePasswordReset describes a locally authorized recovery. The
+// application is responsible for delivering TemporaryPassword through a
+// private, one-time channel; the value must never be logged or audited.
+type AdministrativePasswordReset struct {
+	Identifier, TemporaryPassword string
 }
 
 func (service *Service) CreateUser(ctx context.Context, input CreateUser) (User, error) {
@@ -176,6 +184,53 @@ func (service *Service) ChangePassword(ctx context.Context, userID, currentPassw
 		return fmt.Errorf("auth: replace password: %w", err)
 	}
 	return nil
+}
+
+// ResetPassword replaces an active user's credential without requiring the
+// current password. It is intended only for a locally authorized
+// administrative recovery command. The repository atomically requires another
+// password change, revokes all sessions, and appends a secret-free audit event.
+func (service *Service) ResetPassword(ctx context.Context, input AdministrativePasswordReset) (User, error) {
+	identifier := strings.TrimSpace(input.Identifier)
+	user, currentHash, err := service.repository.CredentialByIdentifier(ctx, identifier)
+	if errors.Is(err, ErrUserNotFound) {
+		return User{}, ErrUserNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("auth: load credentials for administrative reset: %w", err)
+	}
+	if user.Status != "active" {
+		return User{}, ErrInactiveUser
+	}
+	if VerifyPassword(currentHash, input.TemporaryPassword) {
+		return User{}, ErrPasswordUnchanged
+	}
+	newHash, err := HashPasswordWithRandom(input.TemporaryPassword, service.random)
+	if err != nil {
+		return User{}, err
+	}
+	auditID, err := randomToken(service.random, 18)
+	if err != nil {
+		return User{}, err
+	}
+	now := service.now().UTC()
+	audit := AuditEvent{
+		ID:           auditID,
+		Action:       "auth.password.reset",
+		ResourceType: "user",
+		ResourceID:   user.ID,
+		Summary:      "A local administrator issued a one-time credential and revoked all sessions.",
+		CreatedAt:    now,
+	}
+	if err = service.repository.ResetPasswordAndRevokeSessions(ctx, user.ID, currentHash, newHash, now, audit); err != nil {
+		if errors.Is(err, ErrInvalidCredentials) {
+			return User{}, ErrInvalidCredentials
+		}
+		return User{}, fmt.Errorf("auth: reset password: %w", err)
+	}
+	user.PasswordChangeRequired = true
+	user.UpdatedAt = now
+	return user, nil
 }
 
 func (service *Service) Authenticate(ctx context.Context, identifier, password string, lifetime time.Duration) (string, Principal, error) {

@@ -23,6 +23,15 @@ the library does not infer route policy. Temporary credentials must be written
 to a private channel or mode-`0600` file and must never be printed into logs,
 manifests, process arguments, or deployment state.
 
+Administrative recovery is deliberately a separate capability. The storage
+adapter atomically replaces the credential, restores the password-change
+requirement, revokes all sessions, and appends a generic audit event. The core
+library does not expose a recovery HTTP handler, deliver the credential, or
+authorize the local operator. Applications must keep that command local,
+generate the credential cryptographically, and write it only to a newly created
+private file. A recovery must not reveal whether an account exists through a
+public request surface.
+
 Unsafe methods without an exact Origin or trustworthy same-origin Fetch
 Metadata fail the origin check. Authentication middleware fails closed when its
 service or `__Host-` cookie policy is invalid. Imported request records have

@@ -2,7 +2,7 @@
 
 # Gamertan Web Foundations
 
-> Status: `v0.1.0-preview.2` public preview. APIs may change before a stable
+> Status: `v0.1.0-preview.4` public preview. APIs may change before a stable
 > release; Linux is the maintained release platform.
 
 Small, composable Go packages for the unglamorous boundaries of a careful web
@@ -23,14 +23,14 @@ Pin the preview in an application module, then import only the packages that
 application needs:
 
 ```bash
-go get gamertan.com/web@v0.1.0-preview.2
+go get gamertan.com/web@v0.1.0-preview.4
 go mod verify
 ```
 
 An application may also name the first package it intends to adopt:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.2
+go get gamertan.com/web/requestmeta@v0.1.0-preview.4
 ```
 
 The version belongs to the `gamertan.com/web` module. Go compiles and links
@@ -56,8 +56,9 @@ without turning that portability into a maintained compatibility claim.
   rate limits.
 - [`abuse`](abuse): application-classified request abuse with pluggable persistence.
 - [`auth`](auth), [`authhttp`](authhttp), and [`authsqlite`](authsqlite):
-  passwords, forced first-login rotation, session revocation, platform-level
-  permissions, cookies, and a no-CGO SQLite adapter.
+  passwords, forced first-login rotation, local administrative recovery,
+  session revocation, platform-level permissions, cookies, and a no-CGO SQLite
+  adapter.
 - [`organizations`](organizations) and [`access`](access): organizations,
   teams, invitations, resource hierarchy, scoped roles, and audited temporary
   access without turning platform operation into tenant-data access.

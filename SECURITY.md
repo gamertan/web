@@ -14,3 +14,9 @@ service-level agreement. There is no bug bounty.
 
 The preview supports only versions explicitly listed in release notes. Security
 claims stop at the documented trust boundaries and executable tests.
+
+Password recovery is an explicitly local administrative capability. It must
+not be wired directly to a public route. Applications using it are responsible
+for local operator authorization and exclusive mode-`0600` credential delivery;
+the library transaction requires a new password change, revokes all sessions,
+and records a secret-free audit event.

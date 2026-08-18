@@ -100,6 +100,98 @@ func TestRequiredPasswordChangeRotatesCredentialAndRevokesSessions(t *testing.T)
 	}
 }
 
+func TestAdministrativePasswordResetIsAtomicAndAudited(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "accounts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Unix(4000, 0).UTC()
+	service, err := auth.New(store, auth.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.CreateUser(t.Context(), auth.CreateUser{Username: "recover.me", Email: "recover@example.test", DisplayName: "Recovery Test", Password: "original permanent credential"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := service.Authenticate(t.Context(), user.Username, "original permanent credential", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reset, err := service.ResetPassword(t.Context(), auth.AdministrativePasswordReset{Identifier: user.Email, TemporaryPassword: "one-time recovery credential"})
+	if err != nil || !reset.PasswordChangeRequired {
+		t.Fatalf("reset=%+v err=%v", reset, err)
+	}
+	if _, err = service.Session(t.Context(), token); !errors.Is(err, auth.ErrSessionNotFound) {
+		t.Fatalf("session survived reset: %v", err)
+	}
+	if _, _, err = service.Authenticate(t.Context(), user.Username, "original permanent credential", time.Hour); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("old credential survived reset: %v", err)
+	}
+	_, principal, err := service.Authenticate(t.Context(), user.Username, "one-time recovery credential", time.Hour)
+	if err != nil || !principal.User.PasswordChangeRequired {
+		t.Fatalf("recovery principal=%+v err=%v", principal, err)
+	}
+	var action, summary string
+	var events int
+	if err = store.db.QueryRow(`SELECT COUNT(*),action,summary FROM gwf_audit_events WHERE resource_id=?`, user.ID).Scan(&events, &action, &summary); err != nil {
+		t.Fatal(err)
+	}
+	if events != 1 || action != "auth.password.reset" || strings.Contains(summary, "one-time recovery credential") || !strings.Contains(summary, "revoked all sessions") {
+		t.Fatalf("events=%d action=%q summary=%q", events, action, summary)
+	}
+	if _, err = service.ResetPassword(t.Context(), auth.AdministrativePasswordReset{Identifier: user.Username, TemporaryPassword: "one-time recovery credential"}); !errors.Is(err, auth.ErrPasswordUnchanged) {
+		t.Fatalf("same credential err=%v", err)
+	}
+}
+
+func TestAdministrativePasswordResetRollsBackWhenAuditCannotCommit(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "accounts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Unix(5000, 0).UTC()
+	service, err := auth.New(store, auth.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.CreateUser(t.Context(), auth.CreateUser{Username: "rollback.me", Email: "rollback@example.test", DisplayName: "Rollback Test", Password: "original permanent credential"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := service.Authenticate(t.Context(), user.Username, "original permanent credential", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, currentHash, err := store.CredentialByUserID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newHash, err := auth.HashPassword("one-time recovery credential")
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit := auth.AuditEvent{ID: "duplicate-audit-id", Action: "auth.password.reset", ResourceType: "user", ResourceID: user.ID, Summary: "A local administrator issued a one-time credential and revoked all sessions.", CreatedAt: now}
+	if err = store.AppendAudit(t.Context(), audit); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.ResetPasswordAndRevokeSessions(t.Context(), user.ID, currentHash, newHash, now, audit); err == nil {
+		t.Fatal("duplicate audit unexpectedly committed reset")
+	}
+	if _, err = service.Session(t.Context(), token); err != nil {
+		t.Fatalf("rollback revoked session: %v", err)
+	}
+	_, principal, err := service.Authenticate(t.Context(), user.Username, "original permanent credential", time.Hour)
+	if err != nil || principal.User.PasswordChangeRequired {
+		t.Fatalf("original credential not restored: principal=%+v err=%v", principal, err)
+	}
+	if _, _, err = service.Authenticate(t.Context(), user.Username, "one-time recovery credential", time.Hour); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("uncommitted recovery credential accepted: %v", err)
+	}
+}
+
 func TestMigrationAddsPasswordRequirementWithoutChangingExistingUsers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.db")
 	database, err := sql.Open("sqlite", path)
