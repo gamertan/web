@@ -4,6 +4,8 @@
 
 ## Unreleased
 
+## v0.1.0-preview.5 — 2026-08-21
+
 - Add storage-neutral passkey registration, discoverable login, and
   operation-bound fresh assertions without adding self-registration, password
   fallback, TOTP, email recovery, or application-owned routes.
@@ -17,6 +19,10 @@
 - Pin WebAuthn protocol verification to `github.com/go-webauthn/webauthn`
   `v0.17.1` and record its source identity, module checksums, licence, and
   transitive security boundary.
+- Add self-service passkey enrollment and removal primitives with fresh
+  assertion, session revocation, and last-credential protection.
+- Keep Previews 1–4 immutable; applications select Preview 5 explicitly when
+  adopting the passkey boundary.
 
 ## v0.1.0-preview.4 — 2026-08-18
 

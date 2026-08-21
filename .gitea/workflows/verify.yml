@@ -2,7 +2,7 @@
 name: verify
 on:
   push:
-    branches: [main, 'codex/**']
+    branches: [main, 'codex/**', 'gamertan/**']
   workflow_dispatch:
 permissions:
   contents: read
