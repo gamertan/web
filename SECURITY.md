@@ -20,3 +20,10 @@ not be wired directly to a public route. Applications using it are responsible
 for local operator authorization and exclusive mode-`0600` credential delivery;
 the library transaction requires a new password change, revokes all sessions,
 and records a secret-free audit event.
+
+Passkey recovery is also local-only. Applications must not expose bootstrap or
+recovery issuance as a public route. Enrollment tokens are single-use,
+short-lived, digest-backed values and their plaintext belongs only in an
+exclusive mode-`0600` delivery file. A passkey assertion proves control of a
+credential; applications must still bind sensitive actions to exact server-side
+state and authorize the resulting principal.

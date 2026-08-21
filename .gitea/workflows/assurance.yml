@@ -33,6 +33,7 @@ jobs:
         run: |
           go test ./requestmeta -run '^$' -fuzz '^FuzzForwardedChain$' -fuzztime 30s
           go test ./analytics -run '^$' -fuzz '^FuzzJSONL$' -fuzztime 30s
+          go test ./authwebauthn -run '^$' -fuzz '^FuzzPasskeyResponseParsers$' -fuzztime 30s
       - name: Verify reproducible starter build
         run: |
           mkdir -p "$RUNNER_TEMP/build-a" "$RUNNER_TEMP/build-b"

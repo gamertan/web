@@ -7,7 +7,13 @@ temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 ./scripts/export-public.sh "$temporary/export"
 (cd "$temporary/export" && find . -type f -printf '%P\n' | sort) >"$temporary/actual"
-grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow | sort >"$temporary/expected"
+while IFS= read -r path; do
+	if [[ $path = */ ]]; then
+		find "${path%/}" -type f -printf '%p\n'
+	else
+		echo "$path"
+	fi
+done < <(grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow) | sort >"$temporary/expected"
 diff -u "$temporary/expected" "$temporary/actual"
 private_word='PRI''VATE'
 token_word='to''ken'

@@ -252,20 +252,39 @@ func (service *Service) Authenticate(ctx context.Context, identifier, password s
 	if user.Status != "active" {
 		return "", Principal{}, ErrInactiveUser
 	}
+	return service.IssueSession(ctx, user.ID, lifetime)
+}
+
+// IssueSession creates an opaque session for an already authenticated user.
+// Authentication mechanisms such as passkeys call this only after completing
+// their credential verification. The repository remains authoritative for the
+// account's current status and permissions.
+func (service *Service) IssueSession(ctx context.Context, userID string, lifetime time.Duration) (string, Principal, error) {
+	if lifetime < 5*time.Minute || lifetime > 30*24*time.Hour {
+		return "", Principal{}, errors.New("auth: invalid session lifetime")
+	}
+	userID = strings.TrimSpace(userID)
+	if !opaqueID(userID) {
+		return "", Principal{}, errors.New("auth: invalid user id")
+	}
 	token, err := randomToken(service.random, 32)
 	if err != nil {
 		return "", Principal{}, err
 	}
 	now := service.now().UTC()
 	digest := sha256.Sum256([]byte(token))
-	if err = service.repository.CreateSession(ctx, Session{Digest: digest, UserID: user.ID, CreatedAt: now, ExpiresAt: now.Add(lifetime), LastSeenAt: now}); err != nil {
+	if err = service.repository.CreateSession(ctx, Session{Digest: digest, UserID: userID, CreatedAt: now, ExpiresAt: now.Add(lifetime), LastSeenAt: now}); err != nil {
 		return "", Principal{}, err
 	}
-	_ = service.repository.UpdateLastLogin(ctx, user.ID, now)
+	_ = service.repository.UpdateLastLogin(ctx, userID, now)
 	principal, _, err := service.repository.PrincipalBySession(ctx, digest, now)
 	if err != nil {
 		_ = service.repository.DeleteSession(ctx, digest)
 		return "", Principal{}, err
+	}
+	if principal.User.Status != "active" {
+		_ = service.repository.DeleteSession(ctx, digest)
+		return "", Principal{}, ErrInactiveUser
 	}
 	return token, principal, nil
 }
@@ -315,6 +334,18 @@ func randomToken(random io.Reader, bytes int) (string, error) {
 		return "", fmt.Errorf("auth: secure randomness unavailable: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func opaqueID(value string) bool {
+	if len(value) < 8 || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if !(character == '-' || character == '_' || character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9') {
+			return false
+		}
+	}
+	return true
 }
 
 func sortedUnique(values []string) []string {

@@ -2,6 +2,22 @@
 
 # Changelog
 
+## Unreleased
+
+- Add storage-neutral passkey registration, discoverable login, and
+  operation-bound fresh assertions without adding self-registration, password
+  fallback, TOTP, email recovery, or application-owned routes.
+- Require exact HTTPS relying-party origins, user verification, discoverable
+  credentials, no attestation conveyance, and an initial ES256-only algorithm
+  policy.
+- Add transactional SQLite credential, ceremony, enrollment, recovery, and
+  last-credential protections with atomic single-use consumption.
+- Add a neutral session-issuance boundary for independently verified
+  credentials while retaining existing password behavior.
+- Pin WebAuthn protocol verification to `github.com/go-webauthn/webauthn`
+  `v0.17.1` and record its source identity, module checksums, licence, and
+  transitive security boundary.
+
 ## v0.1.0-preview.4 — 2026-08-18
 
 - Add an explicit local-administrator password recovery operation without

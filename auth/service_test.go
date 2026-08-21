@@ -43,9 +43,37 @@ func TestRevokeSessionRejectsInvalidTokenBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestIssueSessionRejectsInactiveRepositoryPrincipal(t *testing.T) {
+	repository := &activeSessionRepository{principal: Principal{User: User{ID: "valid-user-id", Status: "disabled"}}}
+	service, err := New(repository, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.IssueSession(t.Context(), "valid-user-id", time.Hour); !errors.Is(err, ErrInactiveUser) {
+		t.Fatalf("err=%v", err)
+	}
+	if !repository.deleted {
+		t.Fatal("inactive session was not deleted")
+	}
+}
+
 type recordingRepository struct {
 	repositoryStub
 	deleted bool
+}
+
+type activeSessionRepository struct {
+	repositoryStub
+	principal Principal
+	deleted   bool
+}
+
+func (repository *activeSessionRepository) PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error) {
+	return repository.principal, Session{}, nil
+}
+func (repository *activeSessionRepository) DeleteSession(context.Context, [32]byte) error {
+	repository.deleted = true
+	return nil
 }
 
 func (repository *recordingRepository) DeleteSession(context.Context, [32]byte) error {

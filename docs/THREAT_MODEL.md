@@ -14,6 +14,16 @@ errors, separate safe/sensitive analytics projections, organization-scoped
 bindings, single-use invitation digests, and short-lived audited break-glass
 grants.
 
+Passkey ceremonies require one exact HTTPS origin and relying-party ID,
+discoverable credentials, user verification, and single-use random challenges.
+The SQLite adapter consumes enrollment tokens and ceremonies atomically.
+Operation approvals retain a separate digest of canonical application state;
+the random WebAuthn challenge is never replaced by a predictable state hash.
+Cross-origin ceremonies, unsupported credential algorithms, expired state, and
+binding drift fail closed. Signature-counter clone warnings are surfaced for
+audit but do not automatically lock out multi-device passkeys whose counters
+legitimately remain zero.
+
 An application may create an account with a cryptographically generated
 temporary credential and `RequirePasswordChange`. Successful rotation compares
 the current credential, replaces its Argon2id hash, clears the requirement, and
@@ -31,6 +41,13 @@ authorize the local operator. Applications must keep that command local,
 generate the credential cryptographically, and write it only to a newly created
 private file. A recovery must not reveal whether an account exists through a
 public request surface.
+
+Passkey-only recovery never creates a password or remote fallback. A local
+administrator revokes sessions and active ceremonies and issues a short-lived
+single-use enrollment token. Existing passkeys remain visible so the operator
+can review and remove lost credentials after enrolling a replacement. The
+library prevents remote removal of the final credential; applications should
+require a freshly bound passkey assertion before every removal.
 
 Unsafe methods without an exact Origin or trustworthy same-origin Fetch
 Metadata fail the origin check. Authentication middleware fails closed when its

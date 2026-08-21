@@ -7,7 +7,8 @@
 
 Small, composable Go packages for the unglamorous boundaries of a careful web
 application: request identity, structured request logs, browser security,
-passwords and sessions, permissions, SQLite persistence, and private analytics.
+passwords, passkeys, sessions, permissions, SQLite persistence, and private
+analytics.
 
 This is a toolkit, not an application framework. Your application keeps its
 router, HTTP policy, HTML, authorization decisions, cache behavior, and
@@ -59,6 +60,9 @@ without turning that portability into a maintained compatibility claim.
   passwords, forced first-login rotation, local administrative recovery,
   session revocation, platform-level permissions, cookies, and a no-CGO SQLite
   adapter.
+- [`authwebauthn`](authwebauthn): passkey-only registration, discoverable
+  login, fresh-operation approval, local recovery tokens, and an ES256-first
+  WebAuthn policy. See the [passkey integration guide](docs/PASSKEYS.md).
 - [`organizations`](organizations) and [`access`](access): organizations,
   teams, invitations, resource hierarchy, scoped roles, and audited temporary
   access without turning platform operation into tenant-data access.

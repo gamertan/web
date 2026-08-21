@@ -88,6 +88,12 @@ func (store *Store) Migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS gwf_auth_sessions_expiry ON gwf_auth_sessions(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS gwf_audit_events (id TEXT PRIMARY KEY, actor_user_id TEXT REFERENCES gwf_users(id) ON DELETE SET NULL, action TEXT NOT NULL, resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, request_id TEXT, summary TEXT NOT NULL, created_at INTEGER NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS gwf_audit_created ON gwf_audit_events(created_at)`,
+		`CREATE TABLE IF NOT EXISTS gwf_passkey_credentials (credential_id BLOB PRIMARY KEY, user_id TEXT NOT NULL REFERENCES gwf_users(id) ON DELETE CASCADE, label TEXT NOT NULL, credential_json BLOB NOT NULL, created_at INTEGER NOT NULL, last_used_at INTEGER)`,
+		`CREATE INDEX IF NOT EXISTS gwf_passkey_credentials_user ON gwf_passkey_credentials(user_id,created_at)`,
+		`CREATE TABLE IF NOT EXISTS gwf_passkey_enrollment_tokens (token_hash BLOB PRIMARY KEY, user_id TEXT NOT NULL REFERENCES gwf_users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS gwf_passkey_enrollment_expiry ON gwf_passkey_enrollment_tokens(expires_at)`,
+		`CREATE TABLE IF NOT EXISTS gwf_passkey_ceremonies (token_hash BLOB PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('registration','login','approval')), user_id TEXT REFERENCES gwf_users(id) ON DELETE CASCADE, label TEXT NOT NULL, session_json BLOB NOT NULL, binding_hash BLOB NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS gwf_passkey_ceremonies_expiry ON gwf_passkey_ceremonies(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS gwf_organizations (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, personal INTEGER NOT NULL CHECK(personal IN (0,1)), personal_owner_user_id TEXT UNIQUE REFERENCES gwf_users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS gwf_organization_memberships (organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES gwf_users(id) ON DELETE CASCADE, status TEXT NOT NULL CHECK(status IN ('active','suspended')), joined_at INTEGER NOT NULL, PRIMARY KEY(organization_id,user_id))`,
 		`CREATE INDEX IF NOT EXISTS gwf_organization_memberships_user ON gwf_organization_memberships(user_id,organization_id)`,
@@ -130,6 +136,9 @@ func (store *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(3,?)`, time.Now().UTC().Unix()); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(4,?)`, time.Now().UTC().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
