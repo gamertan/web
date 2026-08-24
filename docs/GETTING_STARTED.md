@@ -25,7 +25,7 @@ The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.5
+go get gamertan.com/web/requestmeta@v0.1.0-preview.6
 go mod verify
 ```
 
@@ -44,6 +44,14 @@ handler = resolver.Middleware(handler)
 
 The complete, copyable composition is in [`starters/basic`](../starters/basic).
 It binds to loopback, shuts down gracefully, and keeps request logging optional.
+
+`requestlog.OpenJSONL` creates a private mode-`0600` file. If a separate,
+unprivileged collector such as Observatory is the only approved reader, prepare
+a trusted setgid directory whose group is that collector, then opt into
+`requestlog.OpenJSONLWithOptions(path, requestlog.JSONLOptions{FileMode: 0o640})`.
+The application still owns rotation, retention, disk monitoring, and sink-error
+health. Never use a world-readable log or add the collector to the application
+account's broader groups merely to make collection convenient.
 
 Configure trusted proxy networks narrowly. A forwarding header is not evidence
 by itself; it becomes usable only when the immediate peer and skipped proxy

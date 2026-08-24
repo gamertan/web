@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+## v0.1.0-preview.6 — 2026-08-24
+
+- Add an explicit mode-`0640` JSONL option for applications that authorize one
+  narrowly scoped collector group, while keeping private mode `0600` as the
+  default and rejecting permissive modes.
+- Document the setgid-directory ownership boundary for Observatory-style
+  collection without granting the collector broader application access.
+- Make vendored dependency and public-snapshot verification portable across
+  the maintained Linux gate and native macOS development environments.
+- Keep Previews 1–5 immutable; applications select Preview 6 explicitly when
+  adopting collector-readable request evidence.
+
 ## v0.1.0-preview.5 — 2026-08-21
 
 - Add storage-neutral passkey registration, discoverable login, and

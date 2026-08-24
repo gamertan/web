@@ -17,22 +17,34 @@ packages=(
 	webauthn
 )
 
-install -D -m 0644 "$source_root/LICENSE" "$derived/LICENSE"
+install_file() {
+	source=$1
+	destination=$2
+	mkdir -p "$(dirname "$destination")"
+	install -m 0644 "$source" "$destination"
+}
+
+install_file "$source_root/LICENSE" "$derived/LICENSE"
 for package in "${packages[@]}"; do
-	while IFS= read -r source; do
+	for source in "$source_root/$package"/*.go; do
+		case $source in
+			*_test.go) continue ;;
+		esac
 		relative=${source#"$source_root"/}
-		install -D -m 0644 "$source" "$derived/$relative"
-	done < <(find "$source_root/$package" -maxdepth 1 -type f -name '*.go' ! -name '*_test.go' | sort)
+		install_file "$source" "$derived/$relative"
+	done
 done
 
 while IFS= read -r source; do
-	sed -i \
+	temporary="$source.tmp"
+	sed \
 		's#github.com/go-webauthn/webauthn#gamertan.com/web/internal/webauthnvendored#g' \
-		"$source"
+		"$source" >"$temporary"
+	mv "$temporary" "$source"
 done < <(find "$derived" -type f -name '*.go' | sort)
 
 cmp -s LICENSES/BSD-3-Clause-go-webauthn.txt "$embedded_root/LICENSE"
-if ! diff -ru --no-dereference "$derived" "$embedded_root"; then
+if ! diff -ru "$derived" "$embedded_root"; then
 	echo 'compiled WebAuthn verifier differs from its audited mechanical derivation' >&2
 	exit 1
 fi

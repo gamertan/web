@@ -6,7 +6,11 @@ cd "$root"
 
 test -f third_party/go-webauthn/LICENSE
 cmp -s LICENSES/BSD-3-Clause-go-webauthn.txt third_party/go-webauthn/LICENSE
-sha256sum -c third_party/go-webauthn.SHA256SUMS >/dev/null
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256sum -c third_party/go-webauthn.SHA256SUMS >/dev/null
+else
+	shasum -a 256 -c third_party/go-webauthn.SHA256SUMS >/dev/null
+fi
 expected=$(sed -n 's#  third_party/go-webauthn/.*#&#p' third_party/go-webauthn.SHA256SUMS | wc -l)
 actual=$(find third_party/go-webauthn -type f | wc -l)
 test "$expected" -eq "$actual"

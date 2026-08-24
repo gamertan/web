@@ -8,7 +8,10 @@ output=$1
 [[ $output = /* && $output != / && ! -e $output ]] || usage
 cd "$root"
 [[ -z $(git status --porcelain=v1 --untracked-files=all) ]] || { echo "private source must be clean" >&2; exit 1; }
-mapfile -t files < <(grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow)
+files=()
+while IFS= read -r file; do
+	files+=("$file")
+done < <(grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow)
 [[ ${#files[@]} -gt 0 ]] || exit 1
 for file in "${files[@]}"; do
 	[[ $file != /* && $file != *..* ]] || { echo "invalid allowlisted path: $file" >&2; exit 1; }

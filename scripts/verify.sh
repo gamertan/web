@@ -5,6 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$root"
 ./scripts/check-licenses.sh
 ./scripts/check-dependencies.sh
+./scripts/test-public-snapshot.sh
 test -z "$(find . \( -path ./third_party -o -path ./internal/webauthnvendored \) -prune -o -name '*.go' -print0 | xargs -0 gofmt -l)"
 go test ./...
 go test -race ./...

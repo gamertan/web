@@ -18,7 +18,7 @@ import "gamertan.com/web/requestmeta"
 and request the containing module at an exact version:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.5
+go get gamertan.com/web/requestmeta@v0.1.0-preview.6
 ```
 
 Only imported packages are compiled and linked. The packages nevertheless

@@ -101,6 +101,33 @@ func TestJSONLRoundTripAndMode(t *testing.T) {
 	}
 }
 
+func TestJSONLAllowsExplicitCollectorGroupRead(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "access.jsonl")
+	sink, err := OpenJSONLWithOptions(path, JSONLOptions{FileMode: 0o640})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 {
+		t.Fatalf("mode=%o", info.Mode().Perm())
+	}
+}
+
+func TestJSONLRejectsOverlyPermissiveMode(t *testing.T) {
+	for _, mode := range []os.FileMode{0o400, 0o620, 0o644, 0o660, 0o666} {
+		path := filepath.Join(t.TempDir(), "access.jsonl")
+		if _, err := OpenJSONLWithOptions(path, JSONLOptions{FileMode: mode}); err == nil {
+			t.Fatalf("accepted mode %o", mode)
+		}
+	}
+}
+
 func TestPanicIsRecordedAndRepanicked(t *testing.T) {
 	sink := &memorySink{}
 	handler := Middleware(sink, Policy{})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("expected") }))

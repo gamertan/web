@@ -6,14 +6,14 @@ cd "$root"
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 ./scripts/export-public.sh "$temporary/export"
-(cd "$temporary/export" && find . -type f -printf '%P\n' | sort) >"$temporary/actual"
+(cd "$temporary/export" && find . -type f -print | sed 's#^\./##' | LC_ALL=C sort) >"$temporary/actual"
 while IFS= read -r path; do
 	if [[ $path = */ ]]; then
-		find "${path%/}" -type f -printf '%p\n'
+		find "${path%/}" -type f -print
 	else
 		echo "$path"
 	fi
-done < <(grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow) | sort >"$temporary/expected"
+done < <(grep -Ev '^[[:space:]]*(#|$)' scripts/public-snapshot.allow) | LC_ALL=C sort >"$temporary/expected"
 diff -u "$temporary/expected" "$temporary/actual"
 private_word='PRI''VATE'
 token_word='to''ken'

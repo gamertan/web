@@ -66,8 +66,10 @@ accepted from request input. Break-glass access lasts at most one hour and is
 not a substitute for ordinary role policy.
 
 Local storage adapters assume the parent directory and host account are trusted.
-They reject a symlink at the configured final path and apply private file modes,
+They reject a symlink at the configured final path and apply bounded file modes,
 but they do not defend against a concurrent privileged actor replacing path
 ancestors during an open. The synchronous JSONL adapter deliberately favors
 durable, bounded evidence over maximum request throughput; the application owns
-rotation, retention, disk monitoring, and health escalation.
+rotation, retention, disk monitoring, and health escalation. Its default is
+mode `0600`; the sole wider option is mode `0640` for a deployment-assigned
+collector group. The toolkit does not select or change that group.

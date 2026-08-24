@@ -2,7 +2,7 @@
 
 # Gamertan Web Foundations
 
-> Status: `v0.1.0-preview.5` public preview. APIs may change before a stable
+> Status: `v0.1.0-preview.6` public preview. APIs may change before a stable
 > release; Linux is the maintained release platform.
 
 Small, composable Go packages for the unglamorous boundaries of a careful web
@@ -24,14 +24,14 @@ Pin the preview in an application module, then import only the packages that
 application needs:
 
 ```bash
-go get gamertan.com/web@v0.1.0-preview.5
+go get gamertan.com/web@v0.1.0-preview.6
 go mod verify
 ```
 
 An application may also name the first package it intends to adopt:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.5
+go get gamertan.com/web/requestmeta@v0.1.0-preview.6
 ```
 
 The version belongs to the `gamertan.com/web` module. Go compiles and links
