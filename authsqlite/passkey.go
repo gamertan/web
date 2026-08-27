@@ -93,6 +93,17 @@ func (store *Store) CredentialsByUserID(ctx context.Context, userID string) ([]a
 	return credentials, rows.Err()
 }
 
+func (store *Store) PasswordCredentialExists(ctx context.Context, userID string) (bool, error) {
+	if !opaqueID(userID) {
+		return false, auth.ErrUserNotFound
+	}
+	var count int
+	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_password_credentials WHERE user_id=?`, userID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count == 1, nil
+}
+
 func (store *Store) SaveCredential(ctx context.Context, credential authwebauthn.Credential, audit auth.AuditEvent) error {
 	if !validCredential(credential, true) || !validAuditEvent(audit) {
 		return errors.New("authsqlite: invalid passkey credential")
@@ -110,6 +121,56 @@ func (store *Store) SaveCredential(ctx context.Context, credential authwebauthn.
 		return errors.New("authsqlite: passkey credential limit reached")
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_passkey_credentials(credential_id,user_id,label,credential_json,created_at,last_used_at) VALUES(?,?,?,?,?,NULL)`, credential.ID, credential.UserID, credential.Label, []byte(credential.Data), credential.CreatedAt.Unix()); err != nil {
+		return err
+	}
+	if err = appendAudit(ctx, tx, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (store *Store) SaveCredentialAndRetirePassword(ctx context.Context, credential authwebauthn.Credential, audit auth.AuditEvent) error {
+	if !validCredential(credential, true) || !validAuditEvent(audit) || audit.ActorUserID != credential.UserID || audit.Action != "auth.passkey.migrate" {
+		return errors.New("authsqlite: invalid passkey migration")
+	}
+	tx, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var credentialCount, passwordCount int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_passkey_credentials WHERE user_id=?`, credential.UserID).Scan(&credentialCount); err != nil {
+		return err
+	}
+	if credentialCount >= maxPasskeysPerUser {
+		return errors.New("authsqlite: passkey credential limit reached")
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_password_credentials WHERE user_id=?`, credential.UserID).Scan(&passwordCount); err != nil {
+		return err
+	}
+	if passwordCount != 1 {
+		return authwebauthn.ErrPasswordNotAvailable
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_passkey_credentials(credential_id,user_id,label,credential_json,created_at,last_used_at) VALUES(?,?,?,?,?,NULL)`, credential.ID, credential.UserID, credential.Label, []byte(credential.Data), credential.CreatedAt.Unix()); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM gwf_password_credentials WHERE user_id=?`, credential.UserID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return authwebauthn.ErrPasswordNotAvailable
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_users SET password_change_required=0,updated_at=? WHERE id=?`, credential.CreatedAt.Unix(), credential.UserID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM gwf_auth_sessions WHERE user_id=?`, credential.UserID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM gwf_passkey_ceremonies WHERE user_id=?`, credential.UserID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM gwf_passkey_enrollment_tokens WHERE user_id=?`, credential.UserID); err != nil {
 		return err
 	}
 	if err = appendAudit(ctx, tx, audit); err != nil {
@@ -311,9 +372,10 @@ func validCredential(credential authwebauthn.Credential, requireLabel bool) bool
 func validCeremony(ceremony authwebauthn.Ceremony) bool {
 	validKind := ceremony.Kind == authwebauthn.CeremonyRegistration || ceremony.Kind == authwebauthn.CeremonyLogin || ceremony.Kind == authwebauthn.CeremonyApproval
 	validUser := ceremony.Kind == authwebauthn.CeremonyLogin && ceremony.UserID == "" || opaqueID(ceremony.UserID)
-	validLabel := ceremony.Kind == authwebauthn.CeremonyRegistration && text(ceremony.Label, 80, false) || ceremony.Kind != authwebauthn.CeremonyRegistration && ceremony.Label == ""
+	registrationKind := ceremony.Kind == authwebauthn.CeremonyRegistration
+	validLabel := registrationKind && text(ceremony.Label, 80, false) || !registrationKind && ceremony.Label == ""
 	zeroBinding := zeroDigest(ceremony.BindingDigest)
-	validBinding := ceremony.Kind == authwebauthn.CeremonyApproval && !zeroBinding || ceremony.Kind != authwebauthn.CeremonyApproval && zeroBinding
+	validBinding := ceremony.Kind == authwebauthn.CeremonyApproval && !zeroBinding || ceremony.Kind == authwebauthn.CeremonyRegistration || ceremony.Kind == authwebauthn.CeremonyLogin && zeroBinding
 	return !zeroDigest(ceremony.Digest) && validKind && validUser && validLabel && validBinding && len(ceremony.SessionData) > 0 && len(ceremony.SessionData) <= maxCeremonySessionBytes && json.Valid(ceremony.SessionData) && !ceremony.CreatedAt.IsZero() && ceremony.ExpiresAt.After(ceremony.CreatedAt)
 }
 

@@ -94,16 +94,16 @@ func (store *Store) Migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS gwf_passkey_enrollment_expiry ON gwf_passkey_enrollment_tokens(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS gwf_passkey_ceremonies (token_hash BLOB PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('registration','login','approval')), user_id TEXT REFERENCES gwf_users(id) ON DELETE CASCADE, label TEXT NOT NULL, session_json BLOB NOT NULL, binding_hash BLOB NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS gwf_passkey_ceremonies_expiry ON gwf_passkey_ceremonies(expires_at)`,
-		`CREATE TABLE IF NOT EXISTS gwf_organizations (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, personal INTEGER NOT NULL CHECK(personal IN (0,1)), personal_owner_user_id TEXT UNIQUE REFERENCES gwf_users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS gwf_organizations (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, personal INTEGER NOT NULL CHECK(personal IN (0,1)), personal_owner_user_id TEXT UNIQUE REFERENCES gwf_users(id) ON DELETE CASCADE, status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')), revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS gwf_organization_memberships (organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES gwf_users(id) ON DELETE CASCADE, status TEXT NOT NULL CHECK(status IN ('active','suspended')), joined_at INTEGER NOT NULL, PRIMARY KEY(organization_id,user_id))`,
 		`CREATE INDEX IF NOT EXISTS gwf_organization_memberships_user ON gwf_organization_memberships(user_id,organization_id)`,
-		`CREATE TABLE IF NOT EXISTS gwf_teams (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(organization_id,slug))`,
+		`CREATE TABLE IF NOT EXISTS gwf_teams (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')), revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(organization_id,slug))`,
 		`CREATE TABLE IF NOT EXISTS gwf_team_members (team_id TEXT NOT NULL REFERENCES gwf_teams(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES gwf_users(id) ON DELETE CASCADE, joined_at INTEGER NOT NULL, PRIMARY KEY(team_id,user_id))`,
 		`CREATE INDEX IF NOT EXISTS gwf_team_members_user ON gwf_team_members(user_id,team_id)`,
 		`CREATE TABLE IF NOT EXISTS gwf_projects (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(organization_id,slug))`,
 		`CREATE TABLE IF NOT EXISTS gwf_environments (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, project_id TEXT NOT NULL REFERENCES gwf_projects(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(project_id,slug))`,
 		`CREATE TABLE IF NOT EXISTS gwf_application_services (id TEXT PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, project_id TEXT NOT NULL REFERENCES gwf_projects(id) ON DELETE CASCADE, environment_id TEXT NOT NULL REFERENCES gwf_environments(id) ON DELETE CASCADE, slug TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE(environment_id,slug))`,
-		`CREATE TABLE IF NOT EXISTS gwf_organization_invitations (token_hash BLOB PRIMARY KEY, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, email_normalized TEXT NOT NULL, invited_by_user_id TEXT NOT NULL REFERENCES gwf_users(id), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER)`,
+		`CREATE TABLE IF NOT EXISTS gwf_organization_invitations (token_hash BLOB PRIMARY KEY, id TEXT NOT NULL UNIQUE, organization_id TEXT NOT NULL REFERENCES gwf_organizations(id) ON DELETE CASCADE, email_normalized TEXT NOT NULL, invited_by_user_id TEXT NOT NULL REFERENCES gwf_users(id), direct_role TEXT NOT NULL DEFAULT '', team_ids_json BLOB NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, used_at INTEGER, revoked_at INTEGER)`,
 		`CREATE INDEX IF NOT EXISTS gwf_organization_invitations_expiry ON gwf_organization_invitations(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS gwf_access_roles (name TEXT PRIMARY KEY, description TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS gwf_access_permissions (name TEXT PRIMARY KEY, description TEXT NOT NULL)`,
@@ -129,6 +129,42 @@ func (store *Store) Migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	for _, migration := range []struct {
+		table, column, definition string
+	}{
+		{"gwf_organizations", "status", `TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived'))`},
+		{"gwf_organizations", "revision", `INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0)`},
+		{"gwf_organizations", "updated_at", `INTEGER NOT NULL DEFAULT 0`},
+		{"gwf_teams", "status", `TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived'))`},
+		{"gwf_teams", "revision", `INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0)`},
+		{"gwf_teams", "updated_at", `INTEGER NOT NULL DEFAULT 0`},
+		{"gwf_organization_invitations", "id", `TEXT`},
+		{"gwf_organization_invitations", "revoked_at", `INTEGER`},
+		{"gwf_organization_invitations", "direct_role", `TEXT NOT NULL DEFAULT ''`},
+		{"gwf_organization_invitations", "team_ids_json", `BLOB NOT NULL DEFAULT '[]'`},
+	} {
+		exists, columnErr := sqliteColumnExists(ctx, tx, migration.table, migration.column)
+		if columnErr != nil {
+			return columnErr
+		}
+		if !exists {
+			if _, err = tx.ExecContext(ctx, `ALTER TABLE `+migration.table+` ADD COLUMN `+migration.column+` `+migration.definition); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_organizations SET updated_at=created_at WHERE updated_at=0`); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_teams SET updated_at=created_at WHERE updated_at=0`); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE gwf_organization_invitations SET id=lower(hex(token_hash)) WHERE id IS NULL`); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `CREATE UNIQUE INDEX IF NOT EXISTS gwf_organization_invitations_id ON gwf_organization_invitations(id)`); err != nil {
+		return err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(1,?)`, time.Now().UTC().Unix()); err != nil {
 		return err
 	}
@@ -139,6 +175,9 @@ func (store *Store) Migrate(ctx context.Context) error {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(4,?)`, time.Now().UTC().Unix()); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT OR IGNORE INTO gamertan_web_migrations(version,applied_at) VALUES(5,?)`, time.Now().UTC().Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()

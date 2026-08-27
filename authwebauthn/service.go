@@ -190,7 +190,7 @@ func (service *Service) BeginEnrollment(ctx context.Context, enrollmentToken, la
 	if err != nil {
 		return BeginResult{}, err
 	}
-	return service.beginRegistration(ctx, user, label)
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{})
 }
 
 func (service *Service) BeginRegistration(ctx context.Context, userID, label string) (BeginResult, error) {
@@ -198,10 +198,28 @@ func (service *Service) BeginRegistration(ctx context.Context, userID, label str
 	if err != nil {
 		return BeginResult{}, err
 	}
-	return service.beginRegistration(ctx, user, label)
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{})
 }
 
-func (service *Service) beginRegistration(ctx context.Context, user auth.User, label string) (BeginResult, error) {
+// BeginPasswordMigration starts registration for an already authenticated
+// password-backed user. Completion atomically retires the password and revokes
+// all sessions, including the session that authorized this ceremony.
+func (service *Service) BeginPasswordMigration(ctx context.Context, userID, label string) (BeginResult, error) {
+	user, err := service.repository.UserByID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return BeginResult{}, err
+	}
+	exists, err := service.repository.PasswordCredentialExists(ctx, user.ID)
+	if err != nil {
+		return BeginResult{}, err
+	}
+	if !exists {
+		return BeginResult{}, ErrPasswordNotAvailable
+	}
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, passwordMigrationBinding(user.ID))
+}
+
+func (service *Service) beginRegistration(ctx context.Context, user auth.User, label, kind string, binding [32]byte) (BeginResult, error) {
 	label, err := credentialLabel(label)
 	if err != nil {
 		return BeginResult{}, err
@@ -223,13 +241,34 @@ func (service *Service) beginRegistration(ctx context.Context, user auth.User, l
 	if err != nil {
 		return BeginResult{}, fmt.Errorf("authwebauthn: begin registration: %w", err)
 	}
-	return service.storeCeremony(ctx, CeremonyRegistration, user.ID, label, session, [32]byte{}, creation.Response, service.config.RegistrationTTL)
+	return service.storeCeremony(ctx, kind, user.ID, label, session, binding, creation.Response, service.config.RegistrationTTL)
 }
 
 func (service *Service) FinishRegistration(ctx context.Context, ceremonyToken string, response []byte) (Credential, error) {
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, [32]byte{}, response, false)
+}
+
+// FinishPasswordMigration verifies the new passkey and persists it together
+// with password retirement and session revocation in one storage transaction.
+func (service *Service) FinishPasswordMigration(ctx context.Context, ceremonyToken string, response []byte) (Credential, error) {
 	ceremony, err := service.takeCeremony(ctx, ceremonyToken, CeremonyRegistration)
 	if err != nil {
 		return Credential{}, err
+	}
+	return service.finishRegistrationCeremony(ctx, ceremony, passwordMigrationBinding(ceremony.UserID), response, true)
+}
+
+func (service *Service) finishRegistration(ctx context.Context, ceremonyToken, kind string, expectedBinding [32]byte, response []byte, retirePassword bool) (Credential, error) {
+	ceremony, err := service.takeCeremony(ctx, ceremonyToken, kind)
+	if err != nil {
+		return Credential{}, err
+	}
+	return service.finishRegistrationCeremony(ctx, ceremony, expectedBinding, response, retirePassword)
+}
+
+func (service *Service) finishRegistrationCeremony(ctx context.Context, ceremony Ceremony, expectedBinding [32]byte, response []byte, retirePassword bool) (Credential, error) {
+	if ceremony.BindingDigest != expectedBinding {
+		return Credential{}, ErrOperationBinding
 	}
 	if len(response) == 0 || len(response) > maxResponseBytes {
 		return Credential{}, errors.New("authwebauthn: registration response is invalid")
@@ -263,11 +302,20 @@ func (service *Service) FinishRegistration(ctx context.Context, ceremonyToken st
 	}
 	now := service.now().UTC()
 	record := Credential{ID: append([]byte(nil), verified.ID...), UserID: user.ID, Label: ceremony.Label, Data: encoded, CreatedAt: now}
-	audit, err := service.audit(user.ID, "auth.passkey.add", "passkey", base64.RawURLEncoding.EncodeToString(verified.ID), "A passkey was enrolled.")
+	action, summary := "auth.passkey.add", "A passkey was enrolled."
+	if retirePassword {
+		action, summary = "auth.passkey.migrate", "A passkey was enrolled and the legacy password credential was retired."
+	}
+	audit, err := service.audit(user.ID, action, "passkey", base64.RawURLEncoding.EncodeToString(verified.ID), summary)
 	if err != nil {
 		return Credential{}, err
 	}
-	if err = service.repository.SaveCredential(ctx, record, audit); err != nil {
+	if retirePassword {
+		err = service.repository.SaveCredentialAndRetirePassword(ctx, record, audit)
+	} else {
+		err = service.repository.SaveCredential(ctx, record, audit)
+	}
+	if err != nil {
 		return Credential{}, err
 	}
 	return record, nil
@@ -592,6 +640,10 @@ func credentialLabel(value string) (string, error) {
 
 func credentialRemovalBinding(userID string, credentialID []byte) []byte {
 	return []byte("gamertan-web/passkey-remove/v1\x00" + userID + "\x00" + base64.RawURLEncoding.EncodeToString(credentialID))
+}
+
+func passwordMigrationBinding(userID string) [32]byte {
+	return BindingDigest([]byte("gamertan-web/password-to-passkey/v1\x00" + userID))
 }
 
 func validateOrigin(rpID, rawOrigin string) error {

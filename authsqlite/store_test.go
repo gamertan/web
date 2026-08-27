@@ -319,11 +319,11 @@ func TestOrganizationTeamResourceAndScopedAccessRoundTrip(t *testing.T) {
 	if err = organizationService.AcceptInvitation(t.Context(), raw, member.ID); err != nil {
 		t.Fatal(err)
 	}
-	team, err := organizationService.CreateTeam(t.Context(), organizations.CreateTeam{OrganizationID: organization.ID, Slug: "operators", Name: "Operators"})
+	team, err := organizationService.CreateTeam(t.Context(), organizations.CreateTeam{OrganizationID: organization.ID, Slug: "operators", Name: "Operators", ActorUserID: owner.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = organizationService.AddTeamMember(t.Context(), team.ID, member.ID); err != nil {
+	if err = organizationService.AddTeamMember(t.Context(), team.ID, member.ID, owner.ID); err != nil {
 		t.Fatal(err)
 	}
 	project, err := organizationService.CreateProject(t.Context(), organizations.CreateProject{OrganizationID: organization.ID, Slug: "eql", Name: "EQL"})
@@ -366,11 +366,96 @@ func TestOrganizationTeamResourceAndScopedAccessRoundTrip(t *testing.T) {
 		t.Fatalf("break-glass decision=%+v err=%v", decision, err)
 	}
 	var audits int
-	if err = store.db.QueryRow(`SELECT COUNT(*) FROM gwf_access_audit_events WHERE organization_id=?`, organization.ID).Scan(&audits); err != nil || audits != 1 {
+	if err = store.db.QueryRow(`SELECT COUNT(*) FROM gwf_access_audit_events WHERE organization_id=?`, organization.ID).Scan(&audits); err != nil || audits != 6 {
 		t.Fatalf("audits=%d err=%v", audits, err)
 	}
 	auditEvents, err := accessService.Audit(t.Context(), organization.ID, 10)
-	if err != nil || len(auditEvents) != 1 || auditEvents[0].Action != "break_glass.activate" {
+	if err != nil || len(auditEvents) != 6 {
 		t.Fatalf("audit events=%+v err=%v", auditEvents, err)
+	}
+	foundBreakGlass := false
+	for _, event := range auditEvents {
+		foundBreakGlass = foundBreakGlass || event.Action == "break_glass.activate"
+	}
+	if !foundBreakGlass {
+		t.Fatalf("break-glass audit missing: %+v", auditEvents)
+	}
+}
+
+func TestInvitationAccessLifecycleAndLastOwnerProtection(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "accounts.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	authService, err := auth.New(store, auth.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := authService.CreateUser(t.Context(), auth.CreateUser{Username: "owner.lifecycle", Email: "owner-lifecycle@example.test", DisplayName: "Owner", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := authService.CreateUser(t.Context(), auth.CreateUser{Username: "member.lifecycle", Email: "member-lifecycle@example.test", DisplayName: "Member", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	organizationService, err := organizations.New(store, organizations.Options{Now: func() time.Time { return now }, OwnerRole: "organization.owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	organization, err := organizationService.CreateOrganization(t.Context(), organizations.CreateOrganization{Slug: "lifecycle-test", Name: "Lifecycle Test", OwnerUserID: owner.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := access.Policy{Roles: map[string]string{"organization.owner": "Owner"}, Permissions: map[string]string{"telemetry.read": "Read"}, Grants: map[string][]string{"organization.owner": {"telemetry.read"}}}
+	accessService, err := access.New(store, policy, access.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = accessService.Seed(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = accessService.Grant(t.Context(), access.Grant{SubjectKind: access.User, SubjectID: owner.ID, Role: "organization.owner", Scope: access.Scope{OrganizationID: organization.ID}, GrantedBy: owner.ID}); err != nil {
+		t.Fatal(err)
+	}
+	if err = organizationService.SetMembershipStatus(t.Context(), organization.ID, owner.ID, "suspended", owner.ID, "request-last-owner"); !errors.Is(err, organizations.ErrLastOwner) {
+		t.Fatalf("last-owner suspension err=%v", err)
+	}
+	team, err := organizationService.CreateTeam(t.Context(), organizations.CreateTeam{OrganizationID: organization.ID, Slug: "operators", Name: "Operators", ActorUserID: owner.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, invitation, err := organizationService.InviteWithAccess(t.Context(), organizations.InviteWithAccess{OrganizationID: organization.ID, Email: member.Email, InvitedByUserID: owner.ID, DirectRole: "organization.owner", TeamIDs: []string{team.ID}, Lifetime: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invitation.DirectRole != "organization.owner" || len(invitation.TeamIDs) != 1 {
+		t.Fatalf("invitation=%+v", invitation)
+	}
+	if err = organizationService.AcceptInvitation(t.Context(), raw, member.ID); err != nil {
+		t.Fatal(err)
+	}
+	decision, err := accessService.Authorize(t.Context(), member.ID, access.Scope{OrganizationID: organization.ID}, "telemetry.read")
+	if err != nil || !decision.Allowed {
+		t.Fatalf("member decision=%+v err=%v", decision, err)
+	}
+	teams, err := organizationService.Teams(t.Context(), organization.ID, member.ID)
+	if err != nil || len(teams) != 1 || teams[0].ID != team.ID {
+		t.Fatalf("member teams=%+v err=%v", teams, err)
+	}
+	if err = organizationService.SetMembershipStatus(t.Context(), organization.ID, owner.ID, "suspended", owner.ID, "request-suspend-owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err = organizationService.RemoveMembership(t.Context(), organization.ID, member.ID, member.ID, "request-last-member"); !errors.Is(err, organizations.ErrLastOwner) {
+		t.Fatalf("sole active owner removal err=%v", err)
+	}
+	if _, err = organizationService.SetOrganizationStatus(t.Context(), organizations.SetOrganizationStatus{ID: organization.ID, Status: "archived", ActorUserID: member.ID, ExpectedRevision: organization.Revision, RequestID: "request-archive"}); err != nil {
+		t.Fatal(err)
+	}
+	decision, err = accessService.Authorize(t.Context(), member.ID, access.Scope{OrganizationID: organization.ID}, "telemetry.read")
+	if err != nil || decision.Allowed {
+		t.Fatalf("archived organization decision=%+v err=%v", decision, err)
 	}
 }

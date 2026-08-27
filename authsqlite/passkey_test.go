@@ -92,6 +92,53 @@ func TestPasskeyCeremonyIsConsumedExactlyOnceConcurrently(t *testing.T) {
 	}
 }
 
+func TestPasskeyMigrationAtomicallyRetiresPasswordAndSessions(t *testing.T) {
+	store, err := Open(t.TempDir() + "/auth.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	authService, err := auth.New(store, auth.Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := authService.CreateUser(t.Context(), auth.CreateUser{Username: "migrate.me", Email: "migrate@example.test", DisplayName: "Migration Test", Password: "legacy password credential"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, _, err := authService.IssueSession(t.Context(), user.ID, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := bytes.Repeat([]byte{7}, 32)
+	encoded, err := json.Marshal(wa.Credential{ID: id, PublicKey: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential := authwebauthn.Credential{ID: id, UserID: user.ID, Label: "Primary passkey", Data: encoded, CreatedAt: now}
+	audit := auth.AuditEvent{ID: "migration-audit", ActorUserID: user.ID, Action: "auth.passkey.migrate", ResourceType: "passkey", ResourceID: "credential", Summary: "migration", CreatedAt: now}
+	if err = store.SaveCredentialAndRetirePassword(t.Context(), credential, audit); err != nil {
+		t.Fatal(err)
+	}
+	if exists, existsErr := store.PasswordCredentialExists(t.Context(), user.ID); existsErr != nil || exists {
+		t.Fatalf("password exists=%v err=%v", exists, existsErr)
+	}
+	if _, _, err = authService.Authenticate(t.Context(), user.Username, "legacy password credential", time.Hour); !errors.Is(err, auth.ErrInvalidCredentials) {
+		t.Fatalf("legacy password still authenticates: %v", err)
+	}
+	if _, err = authService.Session(t.Context(), session); !errors.Is(err, auth.ErrSessionNotFound) {
+		t.Fatalf("session survived migration: %v", err)
+	}
+	credentials, err := store.CredentialsByUserID(t.Context(), user.ID)
+	if err != nil || len(credentials) != 1 || !bytes.Equal(credentials[0].ID, id) {
+		t.Fatalf("credentials=%+v err=%v", credentials, err)
+	}
+	if err = store.SaveCredentialAndRetirePassword(t.Context(), credential, audit); !errors.Is(err, authwebauthn.ErrPasswordNotAvailable) {
+		t.Fatalf("migration replay err=%v", err)
+	}
+}
+
 func testAudit(id, action, resourceID string, now time.Time) auth.AuditEvent {
 	return auth.AuditEvent{ID: id, Action: action, ResourceType: "user", ResourceID: resourceID, Summary: "test", CreatedAt: now}
 }

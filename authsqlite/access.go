@@ -53,9 +53,9 @@ func (store *Store) Grant(ctx context.Context, binding access.Binding) error {
 	}
 	defer tx.Rollback()
 	var exists int
-	query := `SELECT COUNT(*) FROM gwf_organization_memberships WHERE organization_id=? AND user_id=? AND status='active'`
+	query := `SELECT COUNT(*) FROM gwf_organization_memberships m JOIN gwf_organizations o ON o.id=m.organization_id AND o.status='active' WHERE m.organization_id=? AND m.user_id=? AND m.status='active'`
 	if binding.SubjectKind == access.Team {
-		query = `SELECT COUNT(*) FROM gwf_teams WHERE organization_id=? AND id=?`
+		query = `SELECT COUNT(*) FROM gwf_teams t JOIN gwf_organizations o ON o.id=t.organization_id AND o.status='active' WHERE t.organization_id=? AND t.id=? AND t.status='active'`
 	}
 	if err = tx.QueryRowContext(ctx, query, binding.Scope.OrganizationID, binding.SubjectID).Scan(&exists); err != nil {
 		return err
@@ -63,7 +63,7 @@ func (store *Store) Grant(ctx context.Context, binding access.Binding) error {
 	if exists != 1 {
 		return errors.New("authsqlite: access subject is not active in organization")
 	}
-	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_organization_memberships WHERE organization_id=? AND user_id=? AND status='active'`, binding.Scope.OrganizationID, binding.GrantedBy).Scan(&exists); err != nil || exists != 1 {
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_organization_memberships m JOIN gwf_organizations o ON o.id=m.organization_id AND o.status='active' WHERE m.organization_id=? AND m.user_id=? AND m.status='active'`, binding.Scope.OrganizationID, binding.GrantedBy).Scan(&exists); err != nil || exists != 1 {
 		if err != nil {
 			return err
 		}
@@ -110,9 +110,10 @@ func (store *Store) EffectiveBindings(ctx context.Context, organizationID, userI
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT b.id,b.subject_kind,b.subject_id,b.role_name,b.project_id,b.environment_id,b.service_id,b.granted_by_user_id,b.granted_at
 		FROM gwf_access_bindings b
+		JOIN gwf_organizations o ON o.id=b.organization_id AND o.status='active'
 		WHERE b.organization_id=? AND b.revoked_at IS NULL
 		AND EXISTS (SELECT 1 FROM gwf_organization_memberships m WHERE m.organization_id=b.organization_id AND m.user_id=? AND m.status='active')
-		AND ((b.subject_kind='user' AND b.subject_id=?) OR (b.subject_kind='team' AND EXISTS (SELECT 1 FROM gwf_team_members tm JOIN gwf_teams t ON t.id=tm.team_id WHERE tm.team_id=b.subject_id AND tm.user_id=? AND t.organization_id=b.organization_id)))
+		AND ((b.subject_kind='user' AND b.subject_id=?) OR (b.subject_kind='team' AND EXISTS (SELECT 1 FROM gwf_team_members tm JOIN gwf_teams t ON t.id=tm.team_id WHERE tm.team_id=b.subject_id AND tm.user_id=? AND t.organization_id=b.organization_id AND t.status='active')))
 		ORDER BY b.id`, organizationID, userID, userID, userID)
 	if err != nil {
 		return nil, err
@@ -142,6 +143,13 @@ func (store *Store) CreateBreakGlass(ctx context.Context, grant access.BreakGlas
 		return err
 	}
 	defer tx.Rollback()
+	var active int
+	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM gwf_organizations o JOIN gwf_organization_memberships m ON m.organization_id=o.id WHERE o.id=? AND o.status='active' AND m.user_id=? AND m.status='active'`, grant.OrganizationID, grant.UserID).Scan(&active); err != nil {
+		return err
+	}
+	if active != 1 {
+		return errors.New("authsqlite: break-glass principal is not active in organization")
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_break_glass(id,organization_id,user_id,permission_name,reason,created_at,expires_at) VALUES(?,?,?,?,?,?,?)`, grant.ID, grant.OrganizationID, grant.UserID, grant.Permission, grant.Reason, grant.CreatedAt.Unix(), grant.ExpiresAt.Unix()); err != nil {
 		return err
 	}
@@ -155,7 +163,7 @@ func (store *Store) ActiveBreakGlass(ctx context.Context, organizationID, userID
 	if !opaqueID(organizationID) || !opaqueID(userID) || now.IsZero() {
 		return nil, errors.New("authsqlite: invalid break-glass query")
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT id,permission_name,reason,created_at,expires_at FROM gwf_break_glass WHERE organization_id=? AND user_id=? AND expires_at>? ORDER BY expires_at`, organizationID, userID, now.Unix())
+	rows, err := store.db.QueryContext(ctx, `SELECT b.id,b.permission_name,b.reason,b.created_at,b.expires_at FROM gwf_break_glass b JOIN gwf_organizations o ON o.id=b.organization_id AND o.status='active' JOIN gwf_organization_memberships m ON m.organization_id=b.organization_id AND m.user_id=b.user_id AND m.status='active' WHERE b.organization_id=? AND b.user_id=? AND b.expires_at>? ORDER BY b.expires_at`, organizationID, userID, now.Unix())
 	if err != nil {
 		return nil, err
 	}

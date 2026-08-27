@@ -4,6 +4,7 @@ package authwebauthn_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -137,6 +138,51 @@ func TestRecoveryRevokesSessionsAndIssuesSingleUseEnrollment(t *testing.T) {
 	}
 	if _, err = service.BeginEnrollment(t.Context(), token, "Replay"); !errors.Is(err, authwebauthn.ErrEnrollmentNotFound) {
 		t.Fatalf("recovery token replay err=%v", err)
+	}
+}
+
+func TestPasswordMigrationCeremonyIsBoundAndUnavailableAfterRetirement(t *testing.T) {
+	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	store, err := authsqlite.Open(t.TempDir() + "/auth.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	authService, err := auth.New(store, auth.Options{Random: &counterReader{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := authService.CreateUser(t.Context(), auth.CreateUser{Username: "legacy.user", Email: "legacy@example.test", DisplayName: "Legacy User", Password: "legacy migration password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := authwebauthn.New(store, authService, authwebauthn.Config{RPID: "observatory.test", RPDisplayName: "Observatory", Origin: "https://observatory.test", RequiredCredentialCount: 1, Random: &counterReader{}, Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin, err := service.BeginPasswordMigration(t.Context(), user.ID, "Primary passkey")
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte(begin.CeremonyToken))
+	ceremony, err := store.TakeCeremony(t.Context(), digest, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ceremony.Kind != authwebauthn.CeremonyRegistration || ceremony.BindingDigest == ([32]byte{}) || ceremony.UserID != user.ID {
+		t.Fatalf("unexpected migration ceremony: %+v", ceremony)
+	}
+	credential := wa.Credential{ID: bytes.Repeat([]byte{9}, 32), PublicKey: []byte{1, 2, 3}}
+	encoded, err := json.Marshal(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit := auth.AuditEvent{ID: "migration-direct", ActorUserID: user.ID, Action: "auth.passkey.migrate", ResourceType: "passkey", ResourceID: "credential", Summary: "migration", CreatedAt: now}
+	if err = store.SaveCredentialAndRetirePassword(t.Context(), authwebauthn.Credential{ID: credential.ID, UserID: user.ID, Label: "Primary", Data: encoded, CreatedAt: now}, audit); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.BeginPasswordMigration(t.Context(), user.ID, "Replay"); !errors.Is(err, authwebauthn.ErrPasswordNotAvailable) {
+		t.Fatalf("retired password migration err=%v", err)
 	}
 }
 

@@ -25,6 +25,7 @@ var (
 	ErrOperationBinding      = errors.New("authwebauthn: operation binding does not match")
 	ErrPasskeyReadiness      = errors.New("authwebauthn: at least two passkeys are required")
 	ErrUnsupportedCredential = errors.New("authwebauthn: credential algorithm is unsupported")
+	ErrPasswordNotAvailable  = errors.New("authwebauthn: password migration is not available")
 )
 
 const (
@@ -100,7 +101,9 @@ type Repository interface {
 	UserByIdentifier(context.Context, string) (auth.User, error)
 	UserByCredentialID(context.Context, []byte) (auth.User, error)
 	CredentialsByUserID(context.Context, string) ([]Credential, error)
+	PasswordCredentialExists(context.Context, string) (bool, error)
 	SaveCredential(context.Context, Credential, auth.AuditEvent) error
+	SaveCredentialAndRetirePassword(context.Context, Credential, auth.AuditEvent) error
 	UpdateCredential(context.Context, Credential) error
 	DeleteCredential(context.Context, string, []byte, int, auth.AuditEvent) error
 	CredentialCount(context.Context, string) (int, error)

@@ -37,6 +37,14 @@ timestamp, UUID, or counter for the random challenge.
 5. Sensitive operations call `BeginApproval` with a canonical application
    payload and `FinishApproval` with those exact same bytes. Any drift fails.
 
+For an existing password-backed account, call `BeginPasswordMigration` only
+from an authenticated account session and finish with
+`FinishPasswordMigration`. The registration ceremony is bound to that user.
+Successful completion stores the passkey, removes the password credential,
+clears the password-change flag, revokes every session and pending ceremony,
+and appends the audit event atomically. The application must clear the current
+session cookie and return the user to passkey login after success.
+
 `authhttp.WritePasskeyBegin` and `authhttp.ReadPasskeyFinish` provide bounded
 JSON framing only. They do not register routes, authorize requests, serve
 JavaScript, or set sessions automatically.

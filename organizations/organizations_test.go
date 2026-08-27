@@ -54,18 +54,39 @@ type repositoryStub struct {
 	acceptedUser  string
 }
 
-func (repository *repositoryStub) CreateOrganization(_ context.Context, organization Organization, _ Membership) error {
+func (repository *repositoryStub) CreateOrganization(_ context.Context, organization Organization, _ Membership, _ AuditEvent) error {
 	repository.organization = organization
 	return nil
 }
-func (*repositoryStub) CreateTeam(context.Context, Team) error               { return nil }
-func (*repositoryStub) AddTeamMember(context.Context, TeamMembership) error  { return nil }
+func (repository *repositoryStub) OrganizationByID(context.Context, string) (Organization, error) {
+	return repository.organization, nil
+}
+func (*repositoryStub) UpdateOrganization(context.Context, Organization, int64, AuditEvent) error {
+	return nil
+}
+func (*repositoryStub) CreateTeam(context.Context, Team, AuditEvent) error { return nil }
+func (*repositoryStub) TeamByID(context.Context, string, string) (Team, error) {
+	return Team{}, nil
+}
+func (*repositoryStub) UpdateTeam(context.Context, Team, int64, AuditEvent) error { return nil }
+func (*repositoryStub) AddTeamMember(context.Context, TeamMembership, AuditEvent) error {
+	return nil
+}
+func (*repositoryStub) RemoveTeamMember(context.Context, string, string, AuditEvent) error {
+	return nil
+}
+func (*repositoryStub) SetMembershipStatus(context.Context, string, string, string, string, AuditEvent) error {
+	return nil
+}
+func (*repositoryStub) RemoveMembership(context.Context, string, string, string, AuditEvent) error {
+	return nil
+}
 func (*repositoryStub) CreateProject(context.Context, Project) error         { return nil }
 func (*repositoryStub) CreateEnvironment(context.Context, Environment) error { return nil }
 func (*repositoryStub) CreateApplicationService(context.Context, ApplicationService) error {
 	return nil
 }
-func (repository *repositoryStub) CreateInvitation(_ context.Context, invitation Invitation) error {
+func (repository *repositoryStub) CreateInvitation(_ context.Context, invitation Invitation, _ AuditEvent) error {
 	repository.invitation = invitation
 	return nil
 }
@@ -75,7 +96,13 @@ func (repository *repositoryStub) InvitationByDigest(context.Context, [32]byte, 
 	}
 	return repository.invitation, nil
 }
-func (repository *repositoryStub) AcceptInvitation(_ context.Context, _ [32]byte, userID string, _ time.Time) error {
+func (*repositoryStub) Invitations(context.Context, string, int) ([]Invitation, error) {
+	return nil, nil
+}
+func (*repositoryStub) RevokeInvitation(context.Context, string, string, time.Time, AuditEvent) error {
+	return nil
+}
+func (repository *repositoryStub) AcceptInvitation(_ context.Context, _ [32]byte, userID string, _ time.Time, _ AuditEvent) error {
 	repository.acceptedUser = userID
 	return nil
 }

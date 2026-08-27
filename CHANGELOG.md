@@ -4,6 +4,17 @@
 
 ## Unreleased
 
+- Add revisioned active/archived lifecycles for organizations and teams,
+  invitation listing and revocation, membership suspension/removal, team-member
+  removal, and transactional organization-visible audit events.
+- Make archived organizations and teams ineffective during authorization and
+  preserve the final active direct owner during membership changes.
+- Allow invitations to carry one bounded direct role and reviewed team
+  memberships, applied atomically with single-use acceptance.
+- Add an atomic password-to-passkey migration ceremony that stores the first
+  passkey, retires the password credential, revokes all sessions, and records
+  the migration audit event in one transaction.
+
 ## v0.1.0-preview.6 — 2026-08-24
 
 - Add an explicit mode-`0640` JSONL option for applications that authorize one
