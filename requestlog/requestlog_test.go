@@ -3,8 +3,10 @@
 package requestlog
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -22,6 +24,16 @@ type memorySink struct {
 	records []Record
 	err     error
 	ctxErr  error
+}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	connection net.Conn
+	buffer     *bufio.ReadWriter
+}
+
+func (recorder *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return recorder.connection, recorder.buffer, nil
 }
 
 func (sink *memorySink) WriteRecord(ctx context.Context, record Record) error {
@@ -206,5 +218,31 @@ func TestResponseStatusUsesFirstHeader(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.test/", nil))
 	if sink.records[0].Status != http.StatusNoContent {
 		t.Fatalf("status=%d", sink.records[0].Status)
+	}
+}
+
+func TestResponseCapturePreservesConnectionHijacking(t *testing.T) {
+	serverConnection, clientConnection := net.Pipe()
+	defer serverConnection.Close()
+	defer clientConnection.Close()
+	underlying := &hijackableRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		connection:       serverConnection,
+		buffer:           bufio.NewReadWriter(bufio.NewReader(serverConnection), bufio.NewWriter(serverConnection)),
+	}
+	capture := &responseCapture{ResponseWriter: underlying, status: http.StatusOK}
+	hijacker, ok := any(capture).(http.Hijacker)
+	if !ok {
+		t.Fatal("request evidence wrapper does not expose http.Hijacker")
+	}
+	connection, buffer, err := hijacker.Hijack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if connection != serverConnection || buffer != underlying.buffer {
+		t.Fatal("hijacked connection was not passed through")
+	}
+	if capture.status != http.StatusSwitchingProtocols || !capture.wroteHeader || capture.bytes != 0 {
+		t.Fatalf("capture after hijack=%+v", capture)
 	}
 }

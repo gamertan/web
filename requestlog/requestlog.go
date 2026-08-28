@@ -4,8 +4,10 @@
 package requestlog
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -208,3 +210,17 @@ func (capture *responseCapture) Write(body []byte) (int, error) {
 }
 
 func (capture *responseCapture) Unwrap() http.ResponseWriter { return capture.ResponseWriter }
+
+// Hijack preserves connection-upgrade support through the request evidence
+// wrapper. A successful upgrade is recorded as HTTP 101; bytes exchanged after
+// hijacking belong to the upgraded protocol and are intentionally not counted
+// as HTTP response-body bytes.
+func (capture *responseCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	connection, buffer, err := http.NewResponseController(capture.ResponseWriter).Hijack()
+	if err != nil {
+		return nil, nil, err
+	}
+	capture.wroteHeader = true
+	capture.status = http.StatusSwitchingProtocols
+	return connection, buffer, nil
+}

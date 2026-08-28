@@ -2,7 +2,12 @@
 
 # Changelog
 
-## Unreleased
+## v0.1.0-preview.8 — 2026-08-28
+
+- Preserve `http.Hijacker` through the request-evidence middleware so audited,
+  authenticated WebSocket and other HTTP upgrade handlers can operate without
+  bypassing request logging. Successful upgrades are recorded as HTTP 101;
+  upgraded-protocol bytes remain outside HTTP body-byte accounting.
 
 - Add revisioned active/archived lifecycles for organizations and teams,
   invitation listing and revocation, membership suspension/removal, team-member
