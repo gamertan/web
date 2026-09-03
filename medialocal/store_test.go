@@ -5,6 +5,7 @@ package medialocal
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,7 +21,9 @@ func TestStoreRoundTripAndIdempotentPut(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared, err := media.Prepare(bytes.NewReader([]byte("%PDF-1.7\nfixture")), "fixture.pdf", media.Limits{})
+	prefix := []byte("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n")
+	pdf := append(prefix, []byte(fmt.Sprintf("xref\n0 2\n0000000000 65535 f \n0000000009 00000 n \ntrailer\n<< /Size 2 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", len(prefix)))...)
+	prepared, err := media.Prepare(bytes.NewReader(pdf), "fixture.pdf", media.Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}

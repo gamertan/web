@@ -20,6 +20,7 @@ import (
 	"mime"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -121,7 +122,7 @@ func Prepare(reader io.Reader, originalName string, limits Limits) (Prepared, er
 	}
 
 	detected := http.DetectContentType(data)
-	if detected == "application/pdf" && bytes.HasPrefix(data, []byte("%PDF-")) {
+	if detected == "application/pdf" && validPDF(data) {
 		result := Prepared{Data: append([]byte(nil), data...), MediaType: "application/pdf", Kind: KindAttachment, OriginalName: name}
 		result.Digest = sha256.Sum256(result.Data)
 		return result, nil
@@ -154,6 +155,61 @@ func Prepare(reader io.Reader, originalName string, limits Limits) (Prepared, er
 	result := Prepared{Data: output.Bytes(), MediaType: mediaType, Kind: KindImage, OriginalName: name, Width: width, Height: height}
 	result.Digest = sha256.Sum256(result.Data)
 	return result, nil
+}
+
+// validPDF performs a deliberately bounded structural check without trying to
+// render or interpret document content. It rejects header-only spoofing and
+// truncated uploads by requiring a supported header, terminal EOF marker, a
+// numeric startxref offset, and either a traditional xref table with trailer
+// or an xref-stream object at that offset.
+func validPDF(data []byte) bool {
+	if len(data) < 32 || !bytes.HasPrefix(data, []byte("%PDF-")) {
+		return false
+	}
+	headerEnd := bytes.IndexAny(data, "\r\n")
+	if headerEnd < 8 || headerEnd > 32 {
+		return false
+	}
+	header := string(bytes.TrimSpace(data[:headerEnd]))
+	if header != "%PDF-1.0" && header != "%PDF-1.1" && header != "%PDF-1.2" && header != "%PDF-1.3" && header != "%PDF-1.4" && header != "%PDF-1.5" && header != "%PDF-1.6" && header != "%PDF-1.7" && header != "%PDF-2.0" {
+		return false
+	}
+	trimmed := bytes.TrimRight(data, "\x00\t\n\f\r ")
+	if !bytes.HasSuffix(trimmed, []byte("%%EOF")) {
+		return false
+	}
+	eof := len(trimmed) - len("%%EOF")
+	start := bytes.LastIndex(trimmed[:eof], []byte("startxref"))
+	if start < headerEnd {
+		return false
+	}
+	cursor := start + len("startxref")
+	for cursor < eof && (trimmed[cursor] == ' ' || trimmed[cursor] == '\t' || trimmed[cursor] == '\r' || trimmed[cursor] == '\n' || trimmed[cursor] == '\f') {
+		cursor++
+	}
+	digits := cursor
+	for cursor < eof && trimmed[cursor] >= '0' && trimmed[cursor] <= '9' && cursor-digits < 20 {
+		cursor++
+	}
+	if cursor == digits {
+		return false
+	}
+	if len(bytes.TrimSpace(trimmed[cursor:eof])) != 0 {
+		return false
+	}
+	offset, err := strconv.ParseInt(string(trimmed[digits:cursor]), 10, 64)
+	if err != nil || offset < int64(headerEnd+1) || offset >= int64(start) {
+		return false
+	}
+	target := trimmed[int(offset):start]
+	if bytes.HasPrefix(target, []byte("xref")) {
+		return bytes.Contains(target, []byte("trailer"))
+	}
+	lineEnd := bytes.IndexByte(target, '\n')
+	if lineEnd < 5 || lineEnd > 80 || !bytes.Contains(target[:lineEnd], []byte(" obj")) {
+		return false
+	}
+	return bytes.Contains(target, []byte("/Type /XRef")) || bytes.Contains(target, []byte("/Type/XRef"))
 }
 
 func Extension(mediaType string) string {

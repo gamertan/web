@@ -2,6 +2,15 @@
 
 # Changelog
 
+## v0.1.0-preview.14 — 2026-09-03
+
+- Reject header-only, truncated, and structurally invalid PDF uploads in the
+  bounded media preparer. Accepted attachments now require a supported PDF
+  version, terminal EOF marker, numeric in-range `startxref`, and either a
+  traditional xref/trailer or xref-stream object at the declared offset.
+- Keep PDF handling storage-neutral and non-rendering: applications still own
+  authorization, reference tracking, attachment disposition, and lifecycle.
+
 ## v0.1.0-preview.13 — 2026-09-03
 
 - Complete the password-plus-recovery-code flow with a short-lived restricted
