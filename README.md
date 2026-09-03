@@ -17,7 +17,7 @@ router, handlers, HTML, authorization decisions, cache behavior, and
 deployment. Adopt one boundary at a time; Go compiles and links only the
 packages you import.
 
-> **Public preview:** `v0.1.0-preview.9`. APIs may change before a stable
+> **Public preview:** `v0.1.0-preview.10`. APIs may change before a stable
 > release. Linux is the maintained release platform.
 
 ## Why Web Foundations?
@@ -38,8 +38,11 @@ packages you import.
 | Bounded structured request evidence | [`requestmeta`](requestmeta) + [`requestlog`](requestlog) |
 | Browser and HTTP security primitives | [`websec`](websec) |
 | Users, credentials, permissions, and sessions | [`auth`](auth) + [`authhttp`](authhttp) |
-| Passkey-only authentication | [`authwebauthn`](authwebauthn) |
+| Atomic password-plus-passkey registration | [`account`](account) |
+| Passkey login and sensitive-operation step-up | [`authwebauthn`](authwebauthn) |
+| Printable single-use recovery codes | [`authrecovery`](authrecovery) |
 | Private SQLite persistence | [`authsqlite`](authsqlite) |
+| Bounded media and private local blobs | [`media`](media) + [`medialocal`](medialocal) |
 | Organizations, teams, and invitations | [`organizations`](organizations) |
 | Organization-scoped roles and temporary access | [`access`](access) |
 | Application-classified request abuse | [`abuse`](abuse) |
@@ -53,14 +56,14 @@ owns—and, just as importantly, what remains application policy.
 Pin the preview in an application module:
 
 ```bash
-go get gamertan.com/web@v0.1.0-preview.9
+go get gamertan.com/web@v0.1.0-preview.10
 go mod verify
 ```
 
 An application may name the first package it intends to adopt:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.9
+go get gamertan.com/web/requestmeta@v0.1.0-preview.10
 ```
 
 The version belongs to the `gamertan.com/web` module. See the
@@ -91,10 +94,13 @@ JSONL logging.
 
 - [`auth`](auth) defines storage-neutral users, password credentials, opaque
   sessions, platform permissions, and audit events.
+- [`account`](account) composes the first password, printable recovery codes,
+  personal organization, and owner access as one registration transaction,
+  optionally including an initial passkey.
 - [`authhttp`](authhttp) connects those sessions to secure browser cookies and
   request context without owning login routes or pages.
 - [`authwebauthn`](authwebauthn) provides discoverable passkey login,
-  passkey-only enrollment, fresh-operation approval, and bounded recovery.
+  enrollment, operation-bound fresh approval, and bounded recovery.
 - [`organizations`](organizations) and [`access`](access) keep platform
   operation separate from organization-data authority while supporting teams,
   invitations, scoped roles, and audited temporary access.

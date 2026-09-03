@@ -2,6 +2,26 @@
 
 # Changelog
 
+## v0.1.0-preview.10 — 2026-09-03
+
+- Add atomic public-account registration with required canonical email,
+  password authentication, printable recovery codes, a personal organization,
+  direct owner access, and an optional initial passkey. Pending registrations
+  cannot authenticate, and abandoned drafts expire without reserving identity
+  fields indefinitely.
+- Add password verification without session issuance plus operation-bound
+  WebAuthn completion hooks, allowing applications to require fresh passkeys
+  for sensitive actions without imposing passkeys on ordinary customer use.
+- Add digest-only recovery-code persistence and short-lived, single-use
+  recovery grants that consume a code and revoke existing sessions atomically.
+- Add bounded raster/PDF media preparation and a hardened content-addressed
+  local filesystem adapter with atomic writes, private modes, and symlink
+  rejection.
+- Add explicit SQLite open-without-migration and schema-requirement APIs while
+  preserving the historical migrating `Open` behavior for existing adopters.
+- Record application dogfood findings and the independent future commerce
+  module boundary.
+
 ## v0.1.0-preview.9 — 2026-09-03
 
 - Add a documented root package and executable composition example so the

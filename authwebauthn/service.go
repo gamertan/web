@@ -190,7 +190,7 @@ func (service *Service) BeginEnrollment(ctx context.Context, enrollmentToken, la
 	if err != nil {
 		return BeginResult{}, err
 	}
-	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{})
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{}, false)
 }
 
 func (service *Service) BeginRegistration(ctx context.Context, userID, label string) (BeginResult, error) {
@@ -198,7 +198,24 @@ func (service *Service) BeginRegistration(ctx context.Context, userID, label str
 	if err != nil {
 		return BeginResult{}, err
 	}
-	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{})
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, [32]byte{}, false)
+}
+
+// BeginAccountRegistration starts the initial passkey ceremony for a pending
+// account. Binding must identify the surrounding single-use registration
+// draft; only its digest is retained in ceremony state.
+func (service *Service) BeginAccountRegistration(ctx context.Context, userID, label string, binding []byte) (BeginResult, error) {
+	if len(binding) < 16 || len(binding) > 4096 {
+		return BeginResult{}, ErrOperationBinding
+	}
+	user, err := service.repository.UserByID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return BeginResult{}, err
+	}
+	if !user.RegistrationPending || user.Status != "active" {
+		return BeginResult{}, auth.ErrInactiveUser
+	}
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, BindingDigest(binding), true)
 }
 
 // BeginPasswordMigration starts registration for an already authenticated
@@ -216,15 +233,15 @@ func (service *Service) BeginPasswordMigration(ctx context.Context, userID, labe
 	if !exists {
 		return BeginResult{}, ErrPasswordNotAvailable
 	}
-	return service.beginRegistration(ctx, user, label, CeremonyRegistration, passwordMigrationBinding(user.ID))
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, passwordMigrationBinding(user.ID), false)
 }
 
-func (service *Service) beginRegistration(ctx context.Context, user auth.User, label, kind string, binding [32]byte) (BeginResult, error) {
+func (service *Service) beginRegistration(ctx context.Context, user auth.User, label, kind string, binding [32]byte, allowPending bool) (BeginResult, error) {
 	label, err := credentialLabel(label)
 	if err != nil {
 		return BeginResult{}, err
 	}
-	adapter, err := service.user(ctx, user)
+	adapter, err := service.user(ctx, user, allowPending)
 	if err != nil {
 		return BeginResult{}, err
 	}
@@ -245,7 +262,19 @@ func (service *Service) beginRegistration(ctx context.Context, user auth.User, l
 }
 
 func (service *Service) FinishRegistration(ctx context.Context, ceremonyToken string, response []byte) (Credential, error) {
-	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, [32]byte{}, response, false)
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, [32]byte{}, response, false, false, nil)
+}
+
+// FinishAccountRegistration verifies an initial credential and delegates its
+// persistence to commit so user activation, personal organization creation,
+// owner binding, recovery-code storage, and the passkey can share one
+// transaction. A failed commit consumes the WebAuthn ceremony and leaves the
+// bounded account draft eligible for a fresh ceremony.
+func (service *Service) FinishAccountRegistration(ctx context.Context, ceremonyToken string, binding, response []byte, commit RegistrationCommit) (Credential, error) {
+	if len(binding) < 16 || len(binding) > 4096 || commit == nil {
+		return Credential{}, ErrOperationBinding
+	}
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, BindingDigest(binding), response, false, true, commit)
 }
 
 // FinishPasswordMigration verifies the new passkey and persists it together
@@ -255,18 +284,18 @@ func (service *Service) FinishPasswordMigration(ctx context.Context, ceremonyTok
 	if err != nil {
 		return Credential{}, err
 	}
-	return service.finishRegistrationCeremony(ctx, ceremony, passwordMigrationBinding(ceremony.UserID), response, true)
+	return service.finishRegistrationCeremony(ctx, ceremony, passwordMigrationBinding(ceremony.UserID), response, true, false, nil)
 }
 
-func (service *Service) finishRegistration(ctx context.Context, ceremonyToken, kind string, expectedBinding [32]byte, response []byte, retirePassword bool) (Credential, error) {
+func (service *Service) finishRegistration(ctx context.Context, ceremonyToken, kind string, expectedBinding [32]byte, response []byte, retirePassword, allowPending bool, commit RegistrationCommit) (Credential, error) {
 	ceremony, err := service.takeCeremony(ctx, ceremonyToken, kind)
 	if err != nil {
 		return Credential{}, err
 	}
-	return service.finishRegistrationCeremony(ctx, ceremony, expectedBinding, response, retirePassword)
+	return service.finishRegistrationCeremony(ctx, ceremony, expectedBinding, response, retirePassword, allowPending, commit)
 }
 
-func (service *Service) finishRegistrationCeremony(ctx context.Context, ceremony Ceremony, expectedBinding [32]byte, response []byte, retirePassword bool) (Credential, error) {
+func (service *Service) finishRegistrationCeremony(ctx context.Context, ceremony Ceremony, expectedBinding [32]byte, response []byte, retirePassword, allowPending bool, commit RegistrationCommit) (Credential, error) {
 	if ceremony.BindingDigest != expectedBinding {
 		return Credential{}, ErrOperationBinding
 	}
@@ -277,7 +306,7 @@ func (service *Service) finishRegistrationCeremony(ctx context.Context, ceremony
 	if err != nil {
 		return Credential{}, err
 	}
-	adapter, err := service.user(ctx, user)
+	adapter, err := service.user(ctx, user, allowPending)
 	if err != nil {
 		return Credential{}, err
 	}
@@ -312,6 +341,10 @@ func (service *Service) finishRegistrationCeremony(ctx context.Context, ceremony
 	}
 	if retirePassword {
 		err = service.repository.SaveCredentialAndRetirePassword(ctx, record, audit)
+	} else if commit != nil {
+		audit.Action = "auth.account.passkey"
+		audit.Summary = "The initial account passkey was enrolled."
+		err = commit(ctx, record, audit)
 	} else {
 		err = service.repository.SaveCredential(ctx, record, audit)
 	}
@@ -358,7 +391,7 @@ func (service *Service) FinishLogin(ctx context.Context, ceremonyToken string, r
 		if lookupErr != nil || account.ID != string(userHandle) {
 			return nil, ErrCredentialNotFound
 		}
-		loaded, lookupErr = service.user(ctx, account)
+		loaded, lookupErr = service.user(ctx, account, false)
 		return loaded, lookupErr
 	}, session, parsed)
 	if err != nil || loaded == nil || user == nil {
@@ -385,7 +418,7 @@ func (service *Service) BeginApproval(ctx context.Context, userID string, bindin
 	if err != nil {
 		return BeginResult{}, err
 	}
-	adapter, err := service.user(ctx, account)
+	adapter, err := service.user(ctx, account, false)
 	if err != nil {
 		return BeginResult{}, err
 	}
@@ -415,7 +448,7 @@ func (service *Service) FinishApproval(ctx context.Context, ceremonyToken string
 	if err != nil {
 		return Approval{}, err
 	}
-	adapter, err := service.user(ctx, account)
+	adapter, err := service.user(ctx, account, false)
 	if err != nil {
 		return Approval{}, err
 	}
@@ -552,8 +585,8 @@ func (service *Service) takeCeremony(ctx context.Context, token, kind string) (C
 	return ceremony, nil
 }
 
-func (service *Service) user(ctx context.Context, account auth.User) (*passkeyUser, error) {
-	if account.Status != "active" {
+func (service *Service) user(ctx context.Context, account auth.User, allowPending bool) (*passkeyUser, error) {
+	if account.Status != "active" || account.RegistrationPending && !allowPending {
 		return nil, auth.ErrInactiveUser
 	}
 	records, err := service.repository.CredentialsByUserID(ctx, account.ID)

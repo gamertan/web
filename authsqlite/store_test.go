@@ -17,6 +17,24 @@ import (
 	"gamertan.com/web/organizations"
 )
 
+func TestOpenCanRequireExplicitMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "explicit.db")
+	store, err := OpenWithOptions(path, OpenOptions{Migrate: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err = store.RequireCurrentSchema(t.Context()); err == nil {
+		t.Fatal("unmigrated database reported current")
+	}
+	if err = store.Migrate(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err = store.RequireCurrentSchema(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestServiceRoundTripWithApplicationPolicy(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "accounts.db"))
 	if err != nil {

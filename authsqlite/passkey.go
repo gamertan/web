@@ -29,7 +29,7 @@ func (store *Store) CreatePasskeyUser(ctx context.Context, user auth.User, enrol
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_users(id,username,username_normalized,email,email_normalized,display_name,status,password_change_required,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, user.ID, user.Username, normalize(user.Username), user.Email, normalize(user.Email), user.DisplayName, user.Status, 0, user.CreatedAt.Unix(), user.UpdatedAt.Unix()); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_users(id,username,username_normalized,email,email_normalized,display_name,status,password_change_required,registration_pending,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, user.ID, user.Username, normalize(user.Username), user.Email, normalize(user.Email), user.DisplayName, user.Status, 0, user.RegistrationPending, user.CreatedAt.Unix(), user.UpdatedAt.Unix()); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO gwf_passkey_enrollment_tokens(token_hash,user_id,created_at,expires_at) VALUES(?,?,?,?)`, enrollment.Digest[:], enrollment.UserID, enrollment.CreatedAt.Unix(), enrollment.ExpiresAt.Unix()); err != nil {
@@ -45,7 +45,7 @@ func (store *Store) UserByID(ctx context.Context, userID string) (auth.User, err
 	if !opaqueID(userID) {
 		return auth.User{}, auth.ErrUserNotFound
 	}
-	return scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,created_at,updated_at FROM gwf_users WHERE id=?`, userID))
+	return scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,registration_pending,created_at,updated_at FROM gwf_users WHERE id=?`, userID))
 }
 
 func (store *Store) UserByIdentifier(ctx context.Context, identifier string) (auth.User, error) {
@@ -53,14 +53,14 @@ func (store *Store) UserByIdentifier(ctx context.Context, identifier string) (au
 	if !text(identifier, 320, false) {
 		return auth.User{}, auth.ErrUserNotFound
 	}
-	return scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,created_at,updated_at FROM gwf_users WHERE username_normalized=? OR email_normalized=?`, normalize(identifier), normalize(identifier)))
+	return scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,registration_pending,created_at,updated_at FROM gwf_users WHERE username_normalized=? OR email_normalized=?`, normalize(identifier), normalize(identifier)))
 }
 
 func (store *Store) UserByCredentialID(ctx context.Context, credentialID []byte) (auth.User, error) {
 	if !boundedCredentialID(credentialID) {
 		return auth.User{}, authwebauthn.ErrCredentialNotFound
 	}
-	user, err := scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.password_change_required,u.created_at,u.updated_at FROM gwf_users u JOIN gwf_passkey_credentials c ON c.user_id=u.id WHERE c.credential_id=?`, credentialID))
+	user, err := scanPasskeyUser(store.db.QueryRowContext(ctx, `SELECT u.id,u.username,u.email,u.display_name,u.status,u.password_change_required,u.registration_pending,u.created_at,u.updated_at FROM gwf_users u JOIN gwf_passkey_credentials c ON c.user_id=u.id WHERE c.credential_id=?`, credentialID))
 	if errors.Is(err, auth.ErrUserNotFound) {
 		return auth.User{}, authwebauthn.ErrCredentialNotFound
 	}
@@ -291,7 +291,7 @@ func (store *Store) ConsumeEnrollmentToken(ctx context.Context, digest [32]byte,
 	if err != nil {
 		return auth.User{}, err
 	}
-	user, err := scanPasskeyUser(tx.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,created_at,updated_at FROM gwf_users WHERE id=?`, userID))
+	user, err := scanPasskeyUser(tx.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,registration_pending,created_at,updated_at FROM gwf_users WHERE id=?`, userID))
 	if err != nil {
 		return auth.User{}, err
 	}
@@ -310,7 +310,7 @@ func (store *Store) RecoverUser(ctx context.Context, identifier string, enrollme
 		return auth.User{}, err
 	}
 	defer tx.Rollback()
-	user, err := scanPasskeyUser(tx.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,created_at,updated_at FROM gwf_users WHERE username_normalized=? OR email_normalized=?`, normalize(identifier), normalize(identifier)))
+	user, err := scanPasskeyUser(tx.QueryRowContext(ctx, `SELECT id,username,email,display_name,status,password_change_required,registration_pending,created_at,updated_at FROM gwf_users WHERE username_normalized=? OR email_normalized=?`, normalize(identifier), normalize(identifier)))
 	if err != nil {
 		return auth.User{}, err
 	}
@@ -342,21 +342,22 @@ type rowScanner interface{ Scan(...any) error }
 
 func scanPasskeyUser(row rowScanner) (auth.User, error) {
 	var user auth.User
-	var passwordChangeRequired int
+	var passwordChangeRequired, registrationPending int
 	var created, updated int64
-	if err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &passwordChangeRequired, &created, &updated); err != nil {
+	if err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &passwordChangeRequired, &registrationPending, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return auth.User{}, auth.ErrUserNotFound
 		}
 		return auth.User{}, err
 	}
 	user.PasswordChangeRequired = passwordChangeRequired == 1
+	user.RegistrationPending = registrationPending == 1
 	user.CreatedAt, user.UpdatedAt = time.Unix(created, 0).UTC(), time.Unix(updated, 0).UTC()
 	return user, nil
 }
 
 func validPasskeyUser(user auth.User) bool {
-	return opaqueID(user.ID) && text(user.Username, 64, false) && text(user.Email, 320, false) && text(user.DisplayName, 128, false) && user.Status == "active" && !user.CreatedAt.IsZero() && !user.UpdatedAt.IsZero()
+	return opaqueID(user.ID) && text(user.Username, 64, false) && text(user.Email, 320, false) && text(user.DisplayName, 128, false) && user.Status == "active" && !user.RegistrationPending && !user.CreatedAt.IsZero() && !user.UpdatedAt.IsZero()
 }
 
 func validEnrollment(token authwebauthn.EnrollmentToken) bool {

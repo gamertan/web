@@ -31,7 +31,13 @@ type User struct {
 	ID, Username, Email, DisplayName, Status string
 	CreatedAt, UpdatedAt                     time.Time
 	PasswordChangeRequired                   bool
+	// RegistrationPending keeps a partially completed public registration
+	// ineligible for authentication until its credentials, personal scope, and
+	// recovery material have been committed atomically.
+	RegistrationPending bool
 }
+
+func (user User) Active() bool { return user.Status == "active" && !user.RegistrationPending }
 
 type Principal struct {
 	User        User
@@ -167,7 +173,7 @@ func (service *Service) ChangePassword(ctx context.Context, userID, currentPassw
 	if !VerifyPassword(currentHash, currentPassword) {
 		return ErrInvalidCredentials
 	}
-	if user.Status != "active" {
+	if !user.Active() {
 		return ErrInactiveUser
 	}
 	if currentPassword == newPassword {
@@ -199,7 +205,7 @@ func (service *Service) ResetPassword(ctx context.Context, input AdministrativeP
 	if err != nil {
 		return User{}, fmt.Errorf("auth: load credentials for administrative reset: %w", err)
 	}
-	if user.Status != "active" {
+	if !user.Active() {
 		return User{}, ErrInactiveUser
 	}
 	if VerifyPassword(currentHash, input.TemporaryPassword) {
@@ -233,24 +239,36 @@ func (service *Service) ResetPassword(ctx context.Context, input AdministrativeP
 	return user, nil
 }
 
+// VerifyPassword verifies the password credential for an active account
+// without creating a session. Applications use it as the first step of a
+// bounded multi-factor ceremony and must not treat success as an authenticated
+// browser session on its own.
+func (service *Service) VerifyPassword(ctx context.Context, identifier, password string) (User, error) {
+	user, hash, err := service.repository.CredentialByIdentifier(ctx, strings.TrimSpace(identifier))
+	if errors.Is(err, ErrUserNotFound) {
+		_ = VerifyPassword(dummyPasswordHash, password)
+		return User{}, ErrInvalidCredentials
+	}
+	if err != nil {
+		_ = VerifyPassword(dummyPasswordHash, password)
+		return User{}, fmt.Errorf("auth: load credentials: %w", err)
+	}
+	if !VerifyPassword(hash, password) {
+		return User{}, ErrInvalidCredentials
+	}
+	if !user.Active() {
+		return User{}, ErrInactiveUser
+	}
+	return user, nil
+}
+
 func (service *Service) Authenticate(ctx context.Context, identifier, password string, lifetime time.Duration) (string, Principal, error) {
 	if lifetime < 5*time.Minute || lifetime > 30*24*time.Hour {
 		return "", Principal{}, errors.New("auth: invalid session lifetime")
 	}
-	user, hash, err := service.repository.CredentialByIdentifier(ctx, strings.TrimSpace(identifier))
-	if errors.Is(err, ErrUserNotFound) {
-		_ = VerifyPassword(dummyPasswordHash, password)
-		return "", Principal{}, ErrInvalidCredentials
-	}
+	user, err := service.VerifyPassword(ctx, identifier, password)
 	if err != nil {
-		_ = VerifyPassword(dummyPasswordHash, password)
-		return "", Principal{}, fmt.Errorf("auth: load credentials: %w", err)
-	}
-	if !VerifyPassword(hash, password) {
-		return "", Principal{}, ErrInvalidCredentials
-	}
-	if user.Status != "active" {
-		return "", Principal{}, ErrInactiveUser
+		return "", Principal{}, err
 	}
 	return service.IssueSession(ctx, user.ID, lifetime)
 }
@@ -282,7 +300,7 @@ func (service *Service) IssueSession(ctx context.Context, userID string, lifetim
 		_ = service.repository.DeleteSession(ctx, digest)
 		return "", Principal{}, err
 	}
-	if principal.User.Status != "active" {
+	if !principal.User.Active() {
 		_ = service.repository.DeleteSession(ctx, digest)
 		return "", Principal{}, ErrInactiveUser
 	}
@@ -302,7 +320,7 @@ func (service *Service) Session(ctx context.Context, token string) (Principal, e
 	if err != nil {
 		return Principal{}, fmt.Errorf("auth: load session: %w", err)
 	}
-	if principal.User.Status != "active" {
+	if !principal.User.Active() {
 		_ = service.repository.DeleteSession(ctx, digest)
 		return Principal{}, ErrInactiveUser
 	}

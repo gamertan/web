@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-// Package authwebauthn provides storage-neutral, passkey-only WebAuthn
-// ceremonies. It owns relying-party policy, bounded single-use ceremony state,
-// credential lifecycle, and recovery tokens while delegating protocol parsing
-// and signature verification to a pinned WebAuthn implementation.
+// Package authwebauthn provides storage-neutral WebAuthn ceremonies for
+// passkey login, enrollment, and operation-bound step-up. It owns relying-party
+// policy, bounded single-use ceremony state, credential lifecycle, and recovery
+// tokens while delegating protocol parsing and signature verification to a
+// pinned WebAuthn implementation.
 package authwebauthn
 
 import (
@@ -91,6 +92,12 @@ type Approval struct {
 	CloneWarning  bool
 	ApprovedAt    time.Time
 }
+
+// RegistrationCommit lets a higher-level account workflow commit a verified
+// initial credential together with the rest of the account state. The
+// callback receives only public-key credential material and a secret-free
+// audit event.
+type RegistrationCommit func(context.Context, Credential, auth.AuditEvent) error
 
 // Repository persists passkey-specific state. Implementations must consume
 // enrollment tokens and ceremonies atomically and must perform recovery and

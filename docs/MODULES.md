@@ -18,7 +18,7 @@ import "gamertan.com/web/requestmeta"
 and request the containing module at an exact version:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.9
+go get gamertan.com/web/requestmeta@v0.1.0-preview.10
 ```
 
 Only imported packages are compiled and linked. The packages nevertheless
@@ -51,6 +51,12 @@ its own `go.mod` and tags such as `authsqlite/v0.1.0-preview.1`.
 Do not split merely to make an architecture diagram look modular. Package
 interfaces provide source-level modularity today; modules are introduced only
 for an independent dependency and release lifecycle.
+
+The `media` package and `medialocal` adapter deliberately remain in the root
+module: they use only the standard library, and applications can adopt the core
+interface without importing the local adapter. Commerce is different. Its
+provider SDK and independently evolving catalog/payment contract justify a
+future nested `gamertan.com/web/commerce` module after application dogfood.
 
 ## Session boundaries
 

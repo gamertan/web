@@ -57,6 +57,31 @@ func TestIssueSessionRejectsInactiveRepositoryPrincipal(t *testing.T) {
 	}
 }
 
+func TestVerifyPasswordDoesNotIssueSession(t *testing.T) {
+	hash, err := HashPassword("correct horse battery staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &credentialRepository{
+		user: User{ID: "valid-user-id", Username: "person", Email: "person@example.test", Status: "active"},
+		hash: hash,
+	}
+	service, err := New(repository, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.VerifyPassword(t.Context(), "person@example.test", "correct horse battery staple")
+	if err != nil || user.ID != repository.user.ID {
+		t.Fatalf("user=%+v err=%v", user, err)
+	}
+	if repository.sessionCreated {
+		t.Fatal("password verification issued a session")
+	}
+	if _, err = service.VerifyPassword(t.Context(), "person@example.test", "wrong password"); !errors.Is(err, ErrInvalidCredentials) {
+		t.Fatalf("wrong password err=%v", err)
+	}
+}
+
 type recordingRepository struct {
 	repositoryStub
 	deleted bool
@@ -66,6 +91,22 @@ type activeSessionRepository struct {
 	repositoryStub
 	principal Principal
 	deleted   bool
+}
+
+type credentialRepository struct {
+	repositoryStub
+	user           User
+	hash           string
+	sessionCreated bool
+}
+
+func (repository *credentialRepository) CredentialByIdentifier(context.Context, string) (User, string, error) {
+	return repository.user, repository.hash, nil
+}
+
+func (repository *credentialRepository) CreateSession(context.Context, Session) error {
+	repository.sessionCreated = true
+	return nil
 }
 
 func (repository *activeSessionRepository) PrincipalBySession(context.Context, [32]byte, time.Time) (Principal, Session, error) {
