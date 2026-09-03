@@ -2,6 +2,18 @@
 
 # Changelog
 
+## v0.1.0-preview.13 — 2026-09-03
+
+- Complete the password-plus-recovery-code flow with a short-lived restricted
+  grant bound into a replacement-passkey ceremony. Completion atomically
+  consumes the grant, stores the verified passkey, replaces every recovery
+  code, revokes any intervening sessions and ceremonies, and records both
+  audits without issuing a normal session.
+- Keep failed completion retryable until grant expiry: a duplicate credential
+  or other transaction failure rolls back grant consumption and recovery-code
+  replacement, while a mismatched WebAuthn binding consumes only the affected
+  ceremony.
+
 ## v0.1.0-preview.12 — 2026-09-03
 
 - Add a root-local bootstrap transaction that creates the first passkey-only

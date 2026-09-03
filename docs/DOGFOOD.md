@@ -43,3 +43,9 @@ application concern belongs in the shared module.
   non-personal organization, membership, direct owner binding, and audits
   together. Applications must seed their owner role first and must write the
   returned raw token only to a newly created private file.
+- Recovery-code consumption alone is not a complete recovery path. The
+  restricted grant must survive an interrupted authenticator prompt yet be
+  consumed in the same transaction that stores the verified replacement
+  passkey and replacement code digests. `authrecovery.BeginPasskey` and
+  `FinishPasskey` now provide that boundary without creating an authenticated
+  session; Gamertan keeps the raw grant only in a short-lived HttpOnly cookie.

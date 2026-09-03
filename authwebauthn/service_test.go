@@ -4,6 +4,7 @@ package authwebauthn_test
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -144,6 +145,30 @@ func TestRecoveryRevokesSessionsAndIssuesSingleUseEnrollment(t *testing.T) {
 	}
 	if _, err = service.BeginEnrollment(t.Context(), token, "Replay"); !errors.Is(err, authwebauthn.ErrEnrollmentNotFound) {
 		t.Fatalf("recovery token replay err=%v", err)
+	}
+}
+
+func TestRecoveryRegistrationIsBoundAndConsumesMismatchedCeremony(t *testing.T) {
+	now := time.Date(2026, 9, 3, 13, 0, 0, 0, time.UTC)
+	store, authService, service := newService(t, &now, &counterReader{})
+	defer store.Close()
+	user, err := authService.CreateUser(t.Context(), auth.CreateUser{Username: "recover.bound", Email: "recover-bound@example.test", DisplayName: "Recover Bound", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := bytes.Repeat([]byte("restricted recovery grant "), 2)
+	begin, err := service.BeginRecoveryRegistration(t.Context(), user.ID, "Replacement passkey", binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.FinishRecoveryRegistration(t.Context(), begin.CeremonyToken, append([]byte(nil), binding[:len(binding)-1]...), []byte(`{}`), func(context.Context, authwebauthn.Credential, auth.AuditEvent) error { return nil }); !errors.Is(err, authwebauthn.ErrOperationBinding) {
+		t.Fatalf("tampered recovery binding err=%v", err)
+	}
+	if _, err = service.FinishRecoveryRegistration(t.Context(), begin.CeremonyToken, binding, []byte(`{}`), func(context.Context, authwebauthn.Credential, auth.AuditEvent) error { return nil }); !errors.Is(err, authwebauthn.ErrCeremonyNotFound) {
+		t.Fatalf("mismatched completion did not consume recovery ceremony: %v", err)
+	}
+	if _, err = service.BeginRecoveryRegistration(t.Context(), user.ID, "Replacement passkey", []byte("short")); !errors.Is(err, authwebauthn.ErrOperationBinding) {
+		t.Fatalf("short recovery binding err=%v", err)
 	}
 }
 

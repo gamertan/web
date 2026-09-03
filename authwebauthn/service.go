@@ -218,6 +218,23 @@ func (service *Service) BeginAccountRegistration(ctx context.Context, userID, la
 	return service.beginRegistration(ctx, user, label, CeremonyRegistration, BindingDigest(binding), true)
 }
 
+// BeginRecoveryRegistration starts a replacement-passkey ceremony bound to a
+// short-lived recovery grant selected by the application. The grant itself is
+// never persisted in ceremony state; only its digest is retained.
+func (service *Service) BeginRecoveryRegistration(ctx context.Context, userID, label string, binding []byte) (BeginResult, error) {
+	if len(binding) < 16 || len(binding) > 4096 {
+		return BeginResult{}, ErrOperationBinding
+	}
+	user, err := service.repository.UserByID(ctx, strings.TrimSpace(userID))
+	if err != nil {
+		return BeginResult{}, err
+	}
+	if user.RegistrationPending || user.Status != "active" {
+		return BeginResult{}, auth.ErrInactiveUser
+	}
+	return service.beginRegistration(ctx, user, label, CeremonyRegistration, BindingDigest(binding), false)
+}
+
 // BeginPasswordMigration starts registration for an already authenticated
 // password-backed user. Completion atomically retires the password and revokes
 // all sessions, including the session that authorized this ceremony.
@@ -287,6 +304,20 @@ func (service *Service) FinishAccountRegistration(ctx context.Context, ceremonyT
 		return Credential{}, ErrOperationBinding
 	}
 	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, "", BindingDigest(binding), response, false, true, commit)
+}
+
+// FinishRecoveryRegistration verifies a replacement passkey and delegates its
+// persistence to commit so recovery-grant consumption, credential storage, and
+// recovery-code replacement can share one transaction.
+func (service *Service) FinishRecoveryRegistration(ctx context.Context, ceremonyToken string, binding, response []byte, commit RegistrationCommit) (Credential, error) {
+	if len(binding) < 16 || len(binding) > 4096 || commit == nil {
+		return Credential{}, ErrOperationBinding
+	}
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, "", BindingDigest(binding), response, false, false, func(commitContext context.Context, credential Credential, audit auth.AuditEvent) error {
+		audit.Action = "auth.recovery.passkey"
+		audit.Summary = "A replacement passkey was enrolled during account recovery."
+		return commit(commitContext, credential, audit)
+	})
 }
 
 // FinishPasswordMigration verifies the new passkey and persists it together

@@ -17,13 +17,15 @@ import (
 	"time"
 
 	"gamertan.com/web/auth"
+	"gamertan.com/web/authwebauthn"
 )
 
 const DefaultCodeCount = 10
 
 var (
-	ErrCodeNotFound  = errors.New("authrecovery: recovery code not found")
-	ErrGrantNotFound = errors.New("authrecovery: recovery grant not found")
+	ErrCodeNotFound       = errors.New("authrecovery: recovery code not found")
+	ErrGrantNotFound      = errors.New("authrecovery: recovery grant not found")
+	ErrPasskeyUnavailable = errors.New("authrecovery: passkey recovery is unavailable")
 )
 
 type Grant struct {
@@ -39,6 +41,38 @@ type Repository interface {
 	TakeRecoveryGrant(context.Context, [32]byte, time.Time) (auth.User, error)
 }
 
+// PasskeyRepository adds the transactional boundary required to finish a
+// password-plus-recovery-code flow without issuing a normal session.
+type PasskeyRepository interface {
+	Repository
+	RecoveryGrant(context.Context, [32]byte, time.Time) (auth.User, error)
+	CompletePasskeyRecovery(context.Context, PasskeyCompletion) error
+}
+
+// Passkeys performs recovery-bound WebAuthn registration ceremonies.
+type Passkeys interface {
+	BeginRecoveryRegistration(context.Context, string, string, []byte) (authwebauthn.BeginResult, error)
+	FinishRecoveryRegistration(context.Context, string, []byte, []byte, authwebauthn.RegistrationCommit) (authwebauthn.Credential, error)
+}
+
+// PasskeyCompletion contains the public credential, digest-only replacement
+// codes, and secret-free audits committed after a recovery ceremony.
+type PasskeyCompletion struct {
+	GrantDigest     [32]byte
+	Credential      authwebauthn.Credential
+	RecoveryDigests [][32]byte
+	PasskeyAudit    auth.AuditEvent
+	RecoveryAudit   auth.AuditEvent
+	CompletedAt     time.Time
+}
+
+// PasskeyFinishResult returns the verified credential and the new plaintext
+// recovery codes. Applications must display the codes once and retain none.
+type PasskeyFinishResult struct {
+	Credential    authwebauthn.Credential
+	RecoveryCodes []string
+}
+
 type PasswordVerifier interface {
 	VerifyPassword(context.Context, string, string) (auth.User, error)
 }
@@ -48,6 +82,7 @@ type Options struct {
 	Now           func() time.Time
 	CodeCount     int
 	GrantLifetime time.Duration
+	Passkeys      Passkeys
 }
 
 type Service struct {
@@ -57,6 +92,7 @@ type Service struct {
 	now        func() time.Time
 	count      int
 	grantTTL   time.Duration
+	passkeys   Passkeys
 }
 
 func New(repository Repository, passwords PasswordVerifier, options Options) (*Service, error) {
@@ -78,7 +114,7 @@ func New(repository Repository, passwords PasswordVerifier, options Options) (*S
 	if options.CodeCount < 5 || options.CodeCount > 20 || options.GrantLifetime < 2*time.Minute || options.GrantLifetime > 30*time.Minute {
 		return nil, errors.New("authrecovery: invalid recovery policy")
 	}
-	return &Service{repository: repository, passwords: passwords, random: options.Random, now: options.Now, count: options.CodeCount, grantTTL: options.GrantLifetime}, nil
+	return &Service{repository: repository, passwords: passwords, random: options.Random, now: options.Now, count: options.CodeCount, grantTTL: options.GrantLifetime, passkeys: options.Passkeys}, nil
 }
 
 // ReplaceCodes creates a complete new recovery-code set. Codes are returned
@@ -133,10 +169,74 @@ func (service *Service) Begin(ctx context.Context, identifier, password, code st
 }
 
 func (service *Service) TakeGrant(ctx context.Context, raw string) (auth.User, error) {
-	if len(raw) < 32 || len(raw) > 128 {
-		return auth.User{}, ErrGrantNotFound
+	digest, err := grantDigest(raw)
+	if err != nil {
+		return auth.User{}, err
 	}
-	return service.repository.TakeRecoveryGrant(ctx, sha256.Sum256([]byte(raw)), service.now().UTC())
+	return service.repository.TakeRecoveryGrant(ctx, digest, service.now().UTC())
+}
+
+// BeginPasskey starts a ceremony only for a live restricted recovery grant.
+// The raw grant remains application-held so a failed or interrupted ceremony
+// can be restarted until the grant expires.
+func (service *Service) BeginPasskey(ctx context.Context, rawGrant, label string) (authwebauthn.BeginResult, error) {
+	repository, ok := service.repository.(PasskeyRepository)
+	if !ok || service.passkeys == nil {
+		return authwebauthn.BeginResult{}, ErrPasskeyUnavailable
+	}
+	digest, err := grantDigest(rawGrant)
+	if err != nil {
+		return authwebauthn.BeginResult{}, err
+	}
+	user, err := repository.RecoveryGrant(ctx, digest, service.now().UTC())
+	if err != nil {
+		return authwebauthn.BeginResult{}, err
+	}
+	return service.passkeys.BeginRecoveryRegistration(ctx, user.ID, label, []byte(rawGrant))
+}
+
+// FinishPasskey consumes the grant only inside the transaction that stores the
+// verified passkey and a fresh recovery-code set. It never issues a session.
+func (service *Service) FinishPasskey(ctx context.Context, rawGrant, ceremonyToken string, response []byte) (PasskeyFinishResult, error) {
+	repository, ok := service.repository.(PasskeyRepository)
+	if !ok || service.passkeys == nil {
+		return PasskeyFinishResult{}, ErrPasskeyUnavailable
+	}
+	digest, err := grantDigest(rawGrant)
+	if err != nil {
+		return PasskeyFinishResult{}, err
+	}
+	user, err := repository.RecoveryGrant(ctx, digest, service.now().UTC())
+	if err != nil {
+		return PasskeyFinishResult{}, err
+	}
+	codes, digests, err := GenerateCodeSet(service.random, service.count)
+	if err != nil {
+		return PasskeyFinishResult{}, err
+	}
+	credential, err := service.passkeys.FinishRecoveryRegistration(ctx, ceremonyToken, []byte(rawGrant), response, func(commitContext context.Context, verified authwebauthn.Credential, passkeyAudit auth.AuditEvent) error {
+		if verified.UserID != user.ID {
+			return errors.New("authrecovery: recovery identity mismatch")
+		}
+		completedAt := service.now().UTC()
+		auditID, auditErr := token(service.random, 18)
+		if auditErr != nil {
+			return auditErr
+		}
+		recoveryAudit := auth.AuditEvent{ID: auditID, ActorUserID: user.ID, Action: "auth.recovery.complete", ResourceType: "user", ResourceID: user.ID, Summary: "Account recovery enrolled a replacement passkey and replaced the recovery-code set.", CreatedAt: completedAt}
+		return repository.CompletePasskeyRecovery(commitContext, PasskeyCompletion{
+			GrantDigest:     digest,
+			Credential:      verified,
+			RecoveryDigests: digests,
+			PasskeyAudit:    passkeyAudit,
+			RecoveryAudit:   recoveryAudit,
+			CompletedAt:     completedAt,
+		})
+	})
+	if err != nil {
+		return PasskeyFinishResult{}, err
+	}
+	return PasskeyFinishResult{Credential: credential, RecoveryCodes: codes}, nil
 }
 
 func GenerateCodeSet(random io.Reader, count int) ([]string, [][32]byte, error) {
@@ -171,6 +271,16 @@ func DigestCode(code string) ([32]byte, error) {
 		return [32]byte{}, ErrCodeNotFound
 	}
 	return sha256.Sum256(append([]byte("gamertan-web-recovery-code-v1\x00"), decoded...)), nil
+}
+
+func grantDigest(raw string) ([32]byte, error) {
+	if len(raw) < 32 || len(raw) > 128 {
+		return [32]byte{}, ErrGrantNotFound
+	}
+	if _, err := base64.RawURLEncoding.DecodeString(raw); err != nil {
+		return [32]byte{}, ErrGrantNotFound
+	}
+	return sha256.Sum256([]byte(raw)), nil
 }
 
 func token(random io.Reader, size int) (string, error) {

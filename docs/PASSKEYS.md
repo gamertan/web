@@ -56,13 +56,29 @@ JavaScript, or set sessions automatically.
 
 ## Recovery and credential lifecycle
 
-Recovery is deliberately host-local and should never be reachable through an
-HTTP handler. It revokes all user sessions and pending ceremonies, replaces
-prior enrollment tokens, appends a secret-free audit event, and returns one
-15-minute token. It does not delete existing passkeys. After enrolling a
-replacement, the operator reviews credential labels and removes lost keys with
-a fresh passkey-bound removal ceremony. The final passkey cannot be removed
-remotely.
+Administrator-assisted `authwebauthn.Recover` is deliberately host-local and
+must never be reachable through an HTTP handler. It revokes all user sessions
+and pending ceremonies, replaces prior enrollment tokens, appends a
+secret-free audit event, and returns one 15-minute token. It does not delete
+existing passkeys. After enrolling a replacement, the operator reviews
+credential labels and removes lost keys with a fresh passkey-bound removal
+ceremony. The final passkey cannot be removed remotely.
+
+An account may separately expose self-service password-plus-recovery-code
+recovery through `authrecovery`. `Begin` verifies the password, consumes one
+printable code, revokes sessions, and returns a short-lived grant—not a normal
+session. Keep that grant in a narrowly scoped, Secure, HttpOnly, SameSite cookie
+and never place it in a URL. `BeginPasskey` binds its digest into the WebAuthn
+ceremony. `FinishPasskey` atomically consumes the grant, stores the verified
+replacement passkey, replaces the entire recovery-code set, revokes any
+sessions or ceremonies created during recovery, and returns the new plaintext
+codes exactly once. It does not issue a session; return the user to normal
+login after displaying and saving the new codes.
+
+A failed storage commit leaves the restricted grant available for a fresh
+ceremony until expiry. A binding mismatch consumes the mismatched ceremony.
+Applications must use generic failure responses and the same credential-attempt
+rate limiting as login.
 
 Before enabling production mutations, applications should require at least two
 independent passkeys and complete a local recovery drill.
