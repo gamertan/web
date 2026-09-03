@@ -2,106 +2,140 @@
 
 # Gamertan Web Foundations
 
-> Status: `v0.1.0-preview.8` public preview. APIs may change before a stable
-> release; Linux is the maintained release platform.
+[![Go Reference](https://pkg.go.dev/badge/gamertan.com/web.svg)](https://pkg.go.dev/gamertan.com/web)
+[![Verify](https://gitea.speelman.ca/gamertan/web/actions/workflows/verify.yml/badge.svg?branch=main)](https://gitea.speelman.ca/gamertan/web/actions?workflow=verify.yml)
 
-Small, composable Go packages for the unglamorous boundaries of a careful web
-application: request identity, structured request logs, browser security,
-passwords, passkeys, sessions, permissions, SQLite persistence, and private
-analytics.
+**Security-conscious building blocks for ordinary `net/http` applications.**
 
-This is a toolkit, not an application framework. Your application keeps its
-router, HTTP policy, HTML, authorization decisions, cache behavior, and
-deployment. Each package works with `net/http` and can be adopted independently.
+Web Foundations provides small, composable Go packages for the unglamorous
+boundaries of a careful web application: request identity, structured request
+evidence, browser security, authentication, passkeys, permissions,
+organizations, SQLite persistence, abuse controls, and private analytics.
 
-The first preview targets modest Linux servers, local files, SQLite, and normal
-Go binaries. It requires no Redis, message broker, hosted identity provider,
-telemetry service, or JavaScript framework.
+It is a toolkit, not an application framework. Your application keeps its
+router, handlers, HTML, authorization decisions, cache behavior, and
+deployment. Adopt one boundary at a time; Go compiles and links only the
+packages you import.
+
+> **Public preview:** `v0.1.0-preview.9`. APIs may change before a stable
+> release. Linux is the maintained release platform.
+
+## Why Web Foundations?
+
+| Design promise | What it means in an application |
+| --- | --- |
+| `net/http` native | Keep the standard router or any compatible router; there is no framework lifecycle. |
+| Explicit security boundaries | Trusted proxies, sensitive log fields, browser origins, and scoped authority are configured deliberately. |
+| Bounded and fail-closed | Untrusted inputs are size-limited, and security-critical configuration or storage failures do not quietly weaken policy. |
+| Storage-neutral core | Interfaces separate identity and access policy from the optional no-CGO SQLite adapter. |
+| Self-hosted by default | No Redis, message broker, hosted identity provider, telemetry service, or JavaScript framework is required. |
+
+## Start with one boundary
+
+| Application need | Begin with |
+| --- | --- |
+| Request IDs and trustworthy client addresses | [`requestmeta`](requestmeta) |
+| Bounded structured request evidence | [`requestmeta`](requestmeta) + [`requestlog`](requestlog) |
+| Browser and HTTP security primitives | [`websec`](websec) |
+| Users, credentials, permissions, and sessions | [`auth`](auth) + [`authhttp`](authhttp) |
+| Passkey-only authentication | [`authwebauthn`](authwebauthn) |
+| Private SQLite persistence | [`authsqlite`](authsqlite) |
+| Organizations, teams, and invitations | [`organizations`](organizations) |
+| Organization-scoped roles and temporary access | [`access`](access) |
+| Application-classified request abuse | [`abuse`](abuse) |
+| Disposable request-log summaries | [`analytics`](analytics) |
+
+The [getting-started guide](docs/GETTING_STARTED.md) explains what each package
+owns—and, just as importantly, what remains application policy.
 
 ## Install
 
-Pin the preview in an application module, then import only the packages that
-application needs:
+Pin the preview in an application module:
 
 ```bash
-go get gamertan.com/web@v0.1.0-preview.8
+go get gamertan.com/web@v0.1.0-preview.9
 go mod verify
 ```
 
-An application may also name the first package it intends to adopt:
+An application may name the first package it intends to adopt:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.8
+go get gamertan.com/web/requestmeta@v0.1.0-preview.9
 ```
 
-The version belongs to the `gamertan.com/web` module. Go compiles and links
-only the packages the application imports. See the [getting-started guide](docs/GETTING_STARTED.md)
-and [module-boundary policy](docs/MODULES.md) before choosing a first slice.
+The version belongs to the `gamertan.com/web` module. See the
+[module-boundary policy](docs/MODULES.md) before selecting a first slice.
 
-Canonical source, issues, security policy, and release notes live on
-[Gamertan Gitea](https://gitea.speelman.ca/gamertan/web). GitHub is a read-only
-discovery snapshot rather than a second release origin.
+## Compose a request path
 
-Linux is the required and supported release platform. WSL may be used as a
-Linux development environment. Native Windows is not a release gate or support
-promise; downstream users may evaluate the ordinary Go packages elsewhere
-without turning that portability into a maintained compatibility claim.
+Build middleware from the application outward. The request metadata resolver
+is outermost so every package inside it observes the same request identity:
 
-## Packages
+```text
+request
+  └─ requestmeta ─ websec ─ requestlog ─ your router and handlers
+```
 
-- [`requestmeta`](requestmeta): trusted-proxy resolution, HTTPS/origin metadata,
-  and request IDs.
-- [`requestlog`](requestlog): bounded versioned records, middleware, sinks, and
-  private JSONL.
-- [`websec`](websec): headers, origin checks, CSRF, redirects, body limits, and
-  rate limits.
-- [`abuse`](abuse): application-classified request abuse with pluggable persistence.
-- [`auth`](auth), [`authhttp`](authhttp), and [`authsqlite`](authsqlite):
-  passwords, forced first-login rotation, local administrative recovery,
-  session revocation, platform-level permissions, cookies, and a no-CGO SQLite
-  adapter.
-- [`authwebauthn`](authwebauthn): passkey-only registration, discoverable
-  login, fresh-operation approval, local recovery tokens, and an ES256-first
-  WebAuthn policy. See the [passkey integration guide](docs/PASSKEYS.md).
-- [`organizations`](organizations) and [`access`](access): organizations,
-  teams, invitations, resource hierarchy, scoped roles, and audited temporary
-  access without turning platform operation into tenant-data access.
-- [`analytics`](analytics): safe and sensitive aggregate projections over request
-  records.
+```go
+var handler http.Handler = router
+handler = requestlog.Middleware(sink, logPolicy)(handler)
+handler = websec.Headers(headerPolicy)(handler)
+handler = resolver.Middleware(handler)
+```
 
-The copyable starter under `starters/basic` demonstrates the packages without
-turning them into a router or template system.
+The copyable [`starters/basic`](starters/basic) server demonstrates that
+composition with loopback binding, graceful shutdown, and optional private
+JSONL logging.
+
+## Identity and access
+
+- [`auth`](auth) defines storage-neutral users, password credentials, opaque
+  sessions, platform permissions, and audit events.
+- [`authhttp`](authhttp) connects those sessions to secure browser cookies and
+  request context without owning login routes or pages.
+- [`authwebauthn`](authwebauthn) provides discoverable passkey login,
+  passkey-only enrollment, fresh-operation approval, and bounded recovery.
+- [`organizations`](organizations) and [`access`](access) keep platform
+  operation separate from organization-data authority while supporting teams,
+  invitations, scoped roles, and audited temporary access.
+
+See the [passkey integration guide](docs/PASSKEYS.md) and
+[organization/access model](docs/ORGANIZATIONS.md) before exposing account or
+administration routes.
+
+## Security and assurance
+
+Client addresses are accepted from forwarding headers only when the immediate
+peer and every skipped proxy are explicitly trusted. Sensitive request fields
+are off by default. Cryptographic entropy failures fail closed. Logs and
+account databases remain private application data and never belong in source
+releases.
+
+Every change is checked with formatting, tests, the race detector, vet,
+dependency policy, licence policy, public-snapshot allowlisting, and a
+reproducible starter build. Scheduled assurance adds vulnerability scanning and
+bounded fuzz campaigns.
+
+Read [SECURITY.md](SECURITY.md), the [threat model](docs/THREAT_MODEL.md),
+[adoption contract](docs/ADOPTION.md), and
+[dependency boundary](docs/DEPENDENCIES.md) before production adoption.
 
 ## HTML and templates
 
 Web Foundations deliberately does not provide a template language. Sandwich
 Hime is the preferred companion for Gamertan applications that want HTML-first,
-typed, ahead-of-time Go templates. The two projects remain independently
-usable: this module does not import the `sando` runtime, and Sandwich Hime does
-not own middleware, authentication, logging, routing, or deployment.
+typed, ahead-of-time Go templates. The projects remain independently usable.
 
-See [HTML with Sandwich Hime](docs/SANDWICH_HIME.md), then follow the official
-[first site tutorial](https://sandwichhime.com/docs/tutorial/) and
-[application integration tutorial](https://sandwichhime.com/docs/tutorial/application/).
+See [HTML with Sandwich Hime](docs/SANDWICH_HIME.md) and the official
+[first-site tutorial](https://sandwichhime.com/docs/tutorial/).
 
-## Security boundary
+## Source, support, and licensing
 
-Client addresses are accepted from forwarding headers only when the immediate
-peer and every skipped proxy are explicitly trusted. Sensitive request fields
-are off by default. Cryptographic entropy failures fail closed. Logs and account
-databases remain private application data and never belong in source releases.
+Canonical source, issues, security policy, and release notes live on
+[Speelman Forge](https://gitea.speelman.ca/gamertan/web). GitHub is a read-only
+discovery snapshot rather than a second release origin.
 
-See [SECURITY.md](SECURITY.md), [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md),
-the [application adoption contract](docs/ADOPTION.md), and
-[docs/SERVICES_ROADMAP.md](docs/SERVICES_ROADMAP.md).
-
-## Licensing
-
-This is a multi-license repository with exact file-level SPDX identifiers:
-
-- embeddable packages and adapters: MPL-2.0;
-- future standalone network services and operational machinery: AGPL-3.0-only;
-- starters, examples, and reusable configuration: 0BSD.
-
-See [LICENSES.md](LICENSES.md). No standalone auth or logging server is included
-in this preview.
+The libraries and adapters are MPL-2.0. Starters and reusable examples are
+0BSD. Future standalone services and operational machinery are
+AGPL-3.0-only. Exact file-level SPDX identifiers remain authoritative; see the
+[licensing map](LICENSES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).

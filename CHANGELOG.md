@@ -2,6 +2,18 @@
 
 # Changelog
 
+## v0.1.0-preview.9 — 2026-09-03
+
+- Add a documented root package and executable composition example so the
+  module landing page presents its purpose, package-selection guidance,
+  security model, and `net/http` integration rather than only a directory
+  index.
+- Add the repository's default MPL-2.0 licence at the conventional root path
+  so Go package tooling can identify the library licence while preserving the
+  existing file-level exceptions for starters and operational machinery.
+- Rework the public README around progressive adoption, explicit design
+  promises, package selection, assurance gates, and canonical project links.
+
 ## v0.1.0-preview.8 — 2026-08-28
 
 - Preserve `http.Hijacker` through the request-evidence middleware so audited,

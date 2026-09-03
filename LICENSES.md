@@ -14,3 +14,7 @@ fails closed on missing or misplaced identifiers.
 Full texts are in `LICENSES/`. Combining these MPL-covered packages with an
 application does not change the licence of the application's own files; changes
 to covered files remain subject to the MPL. This summary is not legal advice.
+
+The root [`LICENSE`](LICENSE) contains the default MPL-2.0 text for package
+indexers and repository tooling. More specific file-level SPDX identifiers in
+the paths above remain authoritative.

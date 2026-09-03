@@ -6,6 +6,7 @@
 .gitignore
 CHANGELOG.md
 CONTRIBUTING.md
+LICENSE
 LICENSES.md
 LICENSES/0BSD.txt
 LICENSES/AGPL-3.0-only.txt
@@ -53,6 +54,8 @@ docs/PUBLIC_SNAPSHOT.md
 docs/SANDWICH_HIME.md
 docs/SERVICES_ROADMAP.md
 docs/THREAT_MODEL.md
+doc.go
+example_test.go
 go.mod
 go.sum
 requestlog/jsonl.go
