@@ -262,7 +262,19 @@ func (service *Service) beginRegistration(ctx context.Context, user auth.User, l
 }
 
 func (service *Service) FinishRegistration(ctx context.Context, ceremonyToken string, response []byte) (Credential, error) {
-	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, [32]byte{}, response, false, false, nil)
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, "", [32]byte{}, response, false, false, nil)
+}
+
+// FinishRegistrationForUser verifies an ordinary self-service enrollment only
+// when the ceremony belongs to the authenticated user selected by the
+// application. The ceremony is consumed on mismatch so a leaked token cannot
+// be retried through another account session.
+func (service *Service) FinishRegistrationForUser(ctx context.Context, ceremonyToken, expectedUserID string, response []byte) (Credential, error) {
+	expectedUserID = strings.TrimSpace(expectedUserID)
+	if expectedUserID == "" {
+		return Credential{}, ErrOperationBinding
+	}
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, expectedUserID, [32]byte{}, response, false, false, nil)
 }
 
 // FinishAccountRegistration verifies an initial credential and delegates its
@@ -274,7 +286,7 @@ func (service *Service) FinishAccountRegistration(ctx context.Context, ceremonyT
 	if len(binding) < 16 || len(binding) > 4096 || commit == nil {
 		return Credential{}, ErrOperationBinding
 	}
-	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, BindingDigest(binding), response, false, true, commit)
+	return service.finishRegistration(ctx, ceremonyToken, CeremonyRegistration, "", BindingDigest(binding), response, false, true, commit)
 }
 
 // FinishPasswordMigration verifies the new passkey and persists it together
@@ -287,10 +299,13 @@ func (service *Service) FinishPasswordMigration(ctx context.Context, ceremonyTok
 	return service.finishRegistrationCeremony(ctx, ceremony, passwordMigrationBinding(ceremony.UserID), response, true, false, nil)
 }
 
-func (service *Service) finishRegistration(ctx context.Context, ceremonyToken, kind string, expectedBinding [32]byte, response []byte, retirePassword, allowPending bool, commit RegistrationCommit) (Credential, error) {
+func (service *Service) finishRegistration(ctx context.Context, ceremonyToken, kind, expectedUserID string, expectedBinding [32]byte, response []byte, retirePassword, allowPending bool, commit RegistrationCommit) (Credential, error) {
 	ceremony, err := service.takeCeremony(ctx, ceremonyToken, kind)
 	if err != nil {
 		return Credential{}, err
+	}
+	if expectedUserID != "" && ceremony.UserID != expectedUserID {
+		return Credential{}, ErrOperationBinding
 	}
 	return service.finishRegistrationCeremony(ctx, ceremony, expectedBinding, response, retirePassword, allowPending, commit)
 }

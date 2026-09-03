@@ -25,7 +25,7 @@ The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.10
+go get gamertan.com/web/requestmeta@v0.1.0-preview.11
 go mod verify
 ```
 

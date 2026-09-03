@@ -53,6 +53,12 @@ func TestBootstrapEnrollmentAndApprovalPolicy(t *testing.T) {
 	if !begin.ExpiresAt.Equal(now.Add(5 * time.Minute)) {
 		t.Fatalf("registration expiry=%v", begin.ExpiresAt)
 	}
+	if _, err = service.FinishRegistrationForUser(t.Context(), begin.CeremonyToken, "another-user", []byte(`{}`)); !errors.Is(err, authwebauthn.ErrOperationBinding) {
+		t.Fatalf("cross-account registration completion err=%v", err)
+	}
+	if _, err = service.FinishRegistrationForUser(t.Context(), begin.CeremonyToken, user.ID, []byte(`{}`)); !errors.Is(err, authwebauthn.ErrCeremonyNotFound) {
+		t.Fatalf("mismatched completion did not consume ceremony: %v", err)
+	}
 
 	if err = service.RequireReady(t.Context(), user.ID); !errors.Is(err, authwebauthn.ErrPasskeyReadiness) {
 		t.Fatalf("readiness without credentials err=%v", err)

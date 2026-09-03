@@ -17,7 +17,7 @@ router, handlers, HTML, authorization decisions, cache behavior, and
 deployment. Adopt one boundary at a time; Go compiles and links only the
 packages you import.
 
-> **Public preview:** `v0.1.0-preview.10`. APIs may change before a stable
+> **Public preview:** `v0.1.0-preview.11`. APIs may change before a stable
 > release. Linux is the maintained release platform.
 
 ## Why Web Foundations?
@@ -56,14 +56,14 @@ owns—and, just as importantly, what remains application policy.
 Pin the preview in an application module:
 
 ```bash
-go get gamertan.com/web@v0.1.0-preview.10
+go get gamertan.com/web@v0.1.0-preview.11
 go mod verify
 ```
 
 An application may name the first package it intends to adopt:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.10
+go get gamertan.com/web/requestmeta@v0.1.0-preview.11
 ```
 
 The version belongs to the `gamertan.com/web` module. See the

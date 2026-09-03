@@ -34,3 +34,7 @@ application concern belongs in the shared module.
   explicit operator command.
 - Commerce remains a separately versioned nested module so payment-provider
   policy and catalog evolution do not enlarge the authentication core.
+- Self-service enrollment exposed an authorization seam: completing a valid
+  ceremony and checking its user only after persistence is too late.
+  `FinishRegistrationForUser` now consumes mismatched ceremonies and checks
+  the application-authenticated user before storing a credential.

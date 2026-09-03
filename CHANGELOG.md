@@ -2,6 +2,13 @@
 
 # Changelog
 
+## v0.1.0-preview.11 — 2026-09-03
+
+- Add expected-user completion for authenticated self-service passkey
+  enrollment. A mismatched ceremony is consumed and fails before credential
+  persistence, closing an authorization seam found while dogfooding Gamertan's
+  account security page.
+
 ## v0.1.0-preview.10 — 2026-09-03
 
 - Add atomic public-account registration with required canonical email,

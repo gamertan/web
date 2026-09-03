@@ -31,7 +31,9 @@ timestamp, UUID, or counter for the random challenge.
 2. A server-rendered enrollment page calls `BeginEnrollment`; the browser uses
    `navigator.credentials.create` with the returned `public_key` value.
 3. The browser posts the credential and opaque ceremony token to a bounded JSON
-   endpoint; `FinishRegistration` verifies and stores the public credential.
+   endpoint; authenticated self-service flows use
+   `FinishRegistrationForUser` so the application session's user ID is checked
+   before any public credential is stored.
 4. Login uses `BeginLogin`, `navigator.credentials.get`, and `FinishLogin`.
    The successful result contains an ordinary opaque `auth` session token.
 5. Sensitive operations call `BeginApproval` with a canonical application
