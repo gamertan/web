@@ -2,6 +2,16 @@
 
 # Changelog
 
+## v0.1.0-preview.12 — 2026-09-03
+
+- Add a root-local bootstrap transaction that creates the first passkey-only
+  application owner, non-personal organization, active membership, direct
+  owner binding, one-time enrollment digest, and secret-free audit records
+  atomically.
+- Fail closed and roll back the entire bootstrap when the application has not
+  seeded the configured owner role. The raw enrollment token is returned only
+  after commit and never enters repository state or audit records.
+
 ## v0.1.0-preview.11 — 2026-09-03
 
 - Add expected-user completion for authenticated self-service passkey

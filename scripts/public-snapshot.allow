@@ -40,6 +40,8 @@ authsqlite/store_test.go
 authsqlite/account.go
 authsqlite/account_test.go
 authsqlite/access.go
+authsqlite/bootstrap.go
+authsqlite/bootstrap_test.go
 authsqlite/organizations.go
 authsqlite/passkey.go
 authsqlite/passkey_test.go
@@ -48,6 +50,8 @@ authwebauthn/fuzz_test.go
 authwebauthn/service.go
 authwebauthn/service_test.go
 authwebauthn/types.go
+bootstrap/bootstrap.go
+bootstrap/bootstrap_test.go
 media/media.go
 media/media_test.go
 medialocal/store.go

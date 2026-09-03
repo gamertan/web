@@ -38,3 +38,8 @@ application concern belongs in the shared module.
   ceremony and checking its user only after persistence is too late.
   `FinishRegistrationForUser` now consumes mismatched ceremonies and checks
   the application-authenticated user before storing a credential.
+- First-owner provisioning exposed another cross-package transaction boundary.
+  `bootstrap` now commits the passkey-only user, enrollment digest,
+  non-personal organization, membership, direct owner binding, and audits
+  together. Applications must seed their owner role first and must write the
+  returned raw token only to a newly created private file.

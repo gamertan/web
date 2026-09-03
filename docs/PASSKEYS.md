@@ -26,8 +26,11 @@ timestamp, UUID, or counter for the random challenge.
 
 ## Application flow
 
-1. A local command calls `Bootstrap` or `Recover` and writes the returned
-   enrollment token once to a newly created mode-`0600` file.
+1. A local command calls `authwebauthn.Bootstrap`, `authwebauthn.Recover`, or
+   `bootstrap.Start` and writes the returned enrollment token once to a newly
+   created mode-`0600` file. Use `bootstrap.Start` for the first application
+   owner so identity, organization membership, direct owner access, and audits
+   cannot be partially committed.
 2. A server-rendered enrollment page calls `BeginEnrollment`; the browser uses
    `navigator.credentials.create` with the returned `public_key` value.
 3. The browser posts the credential and opaque ceremony token to a bounded JSON

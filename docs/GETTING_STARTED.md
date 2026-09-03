@@ -19,13 +19,14 @@ install an imagined framework lifecycle around it.
 | SQLite persistence for `auth` | `authsqlite` | Database placement, backup, migration approval, and recovery |
 | One account across organizations and teams | `organizations`, `authsqlite` | Invitation UX, organization naming, and lifecycle policy |
 | Organization-scoped authorization | `access`, `authsqlite` | Role definitions, resource ownership, and route enforcement |
+| First passkey-only owner and home organization | `bootstrap`, `authsqlite` | Root-local command, private token file, enrollment page, and owner-role policy |
 | Aggregate projections over request records | `analytics` | Collection policy, access control, report UI, and retention |
 
 The packages are ordinary Go imports. Pin the current preview and verify its
 module checksum:
 
 ```bash
-go get gamertan.com/web/requestmeta@v0.1.0-preview.11
+go get gamertan.com/web/requestmeta@v0.1.0-preview.12
 go mod verify
 ```
 
@@ -60,6 +61,17 @@ failures that affect security decisions should stop the request rather than
 quietly changing identity or policy.
 
 ## Bootstrap an account without inventing a permanent password
+
+For the first application owner, prefer `bootstrap.Start`. After explicitly
+seeding the application's access policy, it creates the active passkey-only
+user, non-personal home organization, membership, direct owner binding,
+enrollment digest, and audit events in one repository transaction. A missing
+owner role or duplicate identity rolls back every row. The application-owned
+root-local command writes the returned raw enrollment token once to an
+exclusive mode-`0600` file and must never print or log it.
+
+For applications that still require a temporary password bootstrap,
+`auth.GenerateTemporaryPassword` remains available:
 
 `auth.GenerateTemporaryPassword` returns 256 bits of URL-safe cryptographic
 entropy. An application can store that value in a newly created private file
